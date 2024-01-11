@@ -105,11 +105,10 @@ def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
       json.dump(gt_ajustado, arquivo, indent=4)
   return caminho_arquivo_json
   
+   
 def coco_metric(gt_json, predictions_json, thr_score= 0.0):
   predictions = thr_score_on_prediction(predictions_json, thr_score)
-  gt_ajustado_path = ajust_ground_truth(gt_json)
-  gt_coco = COCO(gt_ajustado_path)
-  os.remove(gt_ajustado_path)
+  gt_coco = COCO(gt_json)
   pred_coco = gt_coco.loadRes(predictions)
   coco_eval = COCOeval(gt_coco, pred_coco, 'bbox')
   coco_eval.evaluate()
@@ -135,38 +134,34 @@ def bbox_iou(bbox1, bbox2):
     iou = inter_area / union_area
     return iou
 
-def mIoU(coco_gt_path, coco_result_path, thr_score):
-  with open(coco_gt_path, 'r') as f:
-      gt = json.load(f)
-  with open(coco_result_path, 'r') as f:
-      predictions = json.load(f)
+def get_prediction_for_image_id(gt_annotation, predictions):
+  image_id = gt_annotation['image_id']
+  return [ann for ann in predictions if ann['image_id'] == image_id]
 
-  predictions = thr_score_on_prediction(predictions, thr_score)
-  gt = ajust_ground_truth(gt)
+def calc_iou(gt_ann, pred_anns):
+  ious = []
+  gt_bbox = gt_ann['bbox']
+  for pred_ann in pred_anns: # Compute iou for each prediction with the gt
+    pred_bbox = pred_ann['bbox']
+    iou = bbox_iou(gt_bbox, pred_bbox)
+    ious.append(iou)
+  return ious
 
-  # Carregar o arquivo COCO JSON do ground truth
-  gt_coco = COCO(gt)
+def mIoU(gt_json_path, predictions_json, thr_score):
+  predictions = thr_score_on_prediction(predictions_json, thr_score)
+  gt_coco = COCO(gt_json_path)
   ious = []
   for gt_ann in gt_coco.dataset['annotations']:
-      image_id = gt_ann['image_id']
-      gt_bbox = gt_ann['bbox']
-
-      pred_anns = [ann for ann in predictions if ann['image_id'] == image_id] # Find all predictions for the current image
-      # Compute iou for each prediction with the gt
-      for pred_ann in pred_anns:
-          pred_bbox = pred_ann['bbox']
-          iou = bbox_iou(gt_bbox, pred_bbox)
-          ious.append(iou)
-
-  mean_iou = np.mean(ious)
-  print(f'mIoU: {mean_iou}')
-  return mean_iou
+      pred_anns = get_prediction_for_image_id(gt_ann, predictions)
+      ious.extend(calc_iou(gt_ann, pred_anns))
+  return np.mean(ious)
 
 def verificar_todas_marcadas(list_ann):
   for ann in list_ann:
     if ann['Marked'] != True:
       return False
   return False
+
 # Comparar cada bounding do gt com todas predições
 # Salvar o melhor_iou e a predição q deu esse iou
 # Depois de percorrer todaas predições
@@ -322,8 +317,11 @@ def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
   # TODO:
   # open jsons from coco_gt_path and coco_result_path in this function and pass the jsons to the functions below
   gt_json, predictions_json = open_jsons([coco_gt_path, coco_result_path])
-  map = coco_metric(gt_json, predictions_json, thr_score= thr_score)
-#   miou = mIoU(coco_gt_path, coco_result_path, thr_score)
+  gt_json_temp = ajust_ground_truth(gt_json)
+  map = coco_metric(gt_json_temp, predictions_json, thr_score= thr_score)
+  miou = mIoU(gt_json_temp, predictions_json, thr_score)
+  print(f'mIoU: {miou}')
+  os.remove(gt_json_temp)
 #   y_true, y_pred, classes =generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou_thr)
 #   f1_score = classification_metrics(y_pred, y_true,classes)
 #   return (map + miou + f1_score)/3
