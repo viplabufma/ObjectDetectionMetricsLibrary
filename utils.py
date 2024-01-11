@@ -7,6 +7,7 @@ from sklearn.metrics import cohen_kappa_score, roc_auc_score, roc_curve,accuracy
 import json
 from tqdm import tqdm
 import numpy as np
+import os
 
 def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='weighted'):
   def draw_confusion_matrix(true,preds):
@@ -103,32 +104,17 @@ def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
   with open(caminho_arquivo_json, 'w') as arquivo:
       json.dump(gt_ajustado, arquivo, indent=4)
   return caminho_arquivo_json
-
-def coco_metric(coco_gt_path, coco_result_path, thr_score= 0.0):
-  # coco metric
-  with open(coco_gt_path, 'r') as f:
-      gt = json.load(f)
-  with open(coco_result_path, 'r') as f:
-      predictions = json.load(f)
-
-  predictions = thr_score_on_prediction(predictions, thr_score)
-  gt = ajust_ground_truth(gt)
-
-  # Carregar o arquivo COCO JSON do ground truth
-  gt_coco = COCO(gt)
-
-  # Carregar o arquivo COCO JSON das predições
+  
+def coco_metric(gt_json, predictions_json, thr_score= 0.0):
+  predictions = thr_score_on_prediction(predictions_json, thr_score)
+  gt_ajustado_path = ajust_ground_truth(gt_json)
+  gt_coco = COCO(gt_ajustado_path)
+  os.remove(gt_ajustado_path)
   pred_coco = gt_coco.loadRes(predictions)
-
-  # Inicializar o objeto COCOeval com o ground truth e as predições
-  coco_eval = COCOeval(gt_coco, pred_coco, 'bbox')  # 'bbox' para avaliação de detecção de objetos
-
-  # Executar a avaliação
-  # coco_eval.params.catIds = [2] # id da classe
+  coco_eval = COCOeval(gt_coco, pred_coco, 'bbox')
   coco_eval.evaluate()
   coco_eval.accumulate()
   coco_eval.summarize()
-
   return coco_eval.stats[0]
 
 def bbox_iou(bbox1, bbox2):
@@ -146,7 +132,6 @@ def bbox_iou(bbox1, bbox2):
     bbox2_area = w2 * h2
 
     union_area = bbox1_area + bbox2_area - inter_area
-
     iou = inter_area / union_area
     return iou
 
@@ -166,11 +151,8 @@ def mIoU(coco_gt_path, coco_result_path, thr_score):
       image_id = gt_ann['image_id']
       gt_bbox = gt_ann['bbox']
 
-      # Find all predictions for the current image
-      pred_anns = [ann for ann in predictions if ann['image_id'] == image_id]
-
-      # Compute iou for each prection with the gt
-      max_iou = 0
+      pred_anns = [ann for ann in predictions if ann['image_id'] == image_id] # Find all predictions for the current image
+      # Compute iou for each prediction with the gt
       for pred_ann in pred_anns:
           pred_bbox = pred_ann['bbox']
           iou = bbox_iou(gt_bbox, pred_bbox)
@@ -179,6 +161,7 @@ def mIoU(coco_gt_path, coco_result_path, thr_score):
   mean_iou = np.mean(ious)
   print(f'mIoU: {mean_iou}')
   return mean_iou
+
 def verificar_todas_marcadas(list_ann):
   for ann in list_ann:
     if ann['Marked'] != True:
@@ -328,11 +311,19 @@ def generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou
   return y_true_full, y_pred_full, classes
 
 
-
+def open_jsons(paths):
+    jsons = []
+    for path in paths:
+        with open(path, 'r') as f:
+            jsons.append(json.load(f))
+    return jsons
 
 def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
-  map = coco_metric(coco_gt_path, coco_result_path, thr_score= thr_score)
-  miou = mIoU(coco_gt_path, coco_result_path, thr_score)
-  y_true, y_pred, classes =generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou_thr)
-  f1_score = classification_metrics(y_pred, y_true,classes)
-  return (map + miou + f1_score)/3
+  # TODO:
+  # open jsons from coco_gt_path and coco_result_path in this function and pass the jsons to the functions below
+  gt_json, predictions_json = open_jsons([coco_gt_path, coco_result_path])
+  map = coco_metric(gt_json, predictions_json, thr_score= thr_score)
+#   miou = mIoU(coco_gt_path, coco_result_path, thr_score)
+#   y_true, y_pred, classes =generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou_thr)
+#   f1_score = classification_metrics(y_pred, y_true,classes)
+#   return (map + miou + f1_score)/3
