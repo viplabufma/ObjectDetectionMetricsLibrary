@@ -32,9 +32,9 @@ def coco_metric(gt_json, predictions_json, thr_score= 0.0, verbose=True):
     cls()
   return coco_eval.stats[0]
 
-def precision_recall_f1_score(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
-  y_true, y_pred, classes = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0], verbose=False)
-  return classification_metrics(y_pred, y_true, classes, verbose=verbose)
+def precision_recall_f1_score(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0], average='weighted'):
+  y_true, y_pred, classes = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=skip_classes, verbose=False)
+  return classification_metrics(y_pred, y_true, classes, verbose=verbose, average=average)
 
 
 def false_negatives(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):

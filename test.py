@@ -10,7 +10,7 @@ gt_json_ajusted = ajust_ground_truth(gt_json)
 
 mIoU(gt_json_ajusted, predictions_json, thr_score= 0.4, verbose=True)
 coco_metric(gt_json_ajusted, predictions_json, thr_score= 0.4, verbose=True)
-precision_recall_f1_score(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0], average='weighted ')
+precision_recall_f1_score(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0], average='weighted')
 false_negatives(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0])
 acuracy(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0])
 balanced_accuracy(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0])
