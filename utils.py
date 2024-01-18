@@ -58,6 +58,9 @@ def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='w
 
   return f1_score_mean/len(classes)
 
+
+
+# TODO: Refatorar
 def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
   # Ajustar GT
   gt_ajustado = dict()
@@ -282,23 +285,23 @@ def get_all_bboxes_from_image_id(gt_coco, id):
 def thr_score_on_prediction(predictions_json, score):
   return [pred for pred in predictions_json if pred['score'] >= score]
 
-def generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou_thr):
-  with open(coco_gt_path, 'r') as f:
-      gt_json = json.load(f)
-  with open(coco_result_path, 'r') as f:
-      predictions = json.load(f)
-  predictions = thr_score_on_prediction(predictions, thr_score)
-  gt_ajusted = ajust_ground_truth(gt_json)
-  gt_coco = COCO(gt_ajusted)
-  ids_das_imagens = [imagem["id"] for imagem in gt_json["images"]]
-  y_true_full = []
-  y_pred_full = []
-  categories_anns = gt_json["categories"]
-  classes = [c["id"] for c in categories_anns if c['id'] != 0]
-  # classes = [c["id"] for c in categories_anns]
+def get_all_ids_from_coco_gt_json(gt_json):
+  return [imagem["id"] for imagem in gt_json["images"]]
 
+def get_all_predictions_from_image_id(predictions_json, id):
+  return [pred for pred in predictions_json if pred["image_id"] == id]
+
+def get_classes_id_from_coco_gt_json(gt_json, skip_classes = []):
+  return [c["id"] for c in gt_json["categories"] if c['id'] not in skip_classes]
+  
+def generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes = []):
+  predictions_json = thr_score_on_prediction(predictions_json, thr_score)
+  ids_das_imagens = get_all_ids_from_coco_gt_json(gt_json)
+  y_true_full, y_pred_full = [], []
+  classes = get_classes_id_from_coco_gt_json(gt_json, skip_classes)
+  
   for id in tqdm(ids_das_imagens):
-    preds = [pred for pred in predictions if pred["image_id"] == id]
+    preds = get_all_predictions_from_image_id(predictions_json, id)
     gts = get_all_bboxes_from_image_id(gt_json, id)
     y_true, y_pred = generate_preds_true_vector_from_anns(gts, preds, iou_thr)
     y_true_full.extend(y_true)
@@ -314,14 +317,12 @@ def open_jsons(paths):
     return jsons
 
 def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
-  # TODO:
-  # open jsons from coco_gt_path and coco_result_path in this function and pass the jsons to the functions below
   gt_json, predictions_json = open_jsons([coco_gt_path, coco_result_path])
   gt_json_temp = ajust_ground_truth(gt_json)
   map = coco_metric(gt_json_temp, predictions_json, thr_score= thr_score)
   miou = mIoU(gt_json_temp, predictions_json, thr_score)
   print(f'mIoU: {miou}')
   os.remove(gt_json_temp)
-#   y_true, y_pred, classes =generate_true_and_pred_vector(coco_gt_path, coco_result_path, thr_score, iou_thr)
-#   f1_score = classification_metrics(y_pred, y_true,classes)
+  y_true, y_pred, classes =generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0])
+  f1_score = classification_metrics(y_pred, y_true,classes)
 #   return (map + miou + f1_score)/3
