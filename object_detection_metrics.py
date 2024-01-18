@@ -5,6 +5,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import numpy as np
 import os
+from sklearn.metrics import accuracy_score
 
 def mIoU(gt_json_path, predictions_json, thr_score, verbose=True):
   predictions = thr_score_on_prediction(predictions_json, thr_score)
@@ -41,3 +42,9 @@ def false_negatives(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou
   conf_matrix = draw_confusion_matrix(y_true, y_pred, verbose=False)
   num_classes = len(set(np.concatenate((y_pred, y_true))))
   return calc_false_negatives_rate(num_classes, conf_matrix, verbose=False)
+
+def acuracy(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
+  y_true, y_pred,_  = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=skip_classes, verbose=False)
+  if verbose:
+    print(f'\nAcuracy: {accuracy_score(y_true, y_pred)}')
+  return accuracy_score(y_true, y_pred)
