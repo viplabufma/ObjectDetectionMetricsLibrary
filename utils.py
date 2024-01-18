@@ -60,52 +60,49 @@ def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='w
 
 
 
-# TODO: Refatorar
-def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
-  # Ajustar GT
-  gt_ajustado = dict()
-  gt_ajustado['images'] = list()
-
-  for img in gt['images']:
-    img_id = img['id']
-    width = img['width']
-    height= img['height']
-    file_name  = img['file_name']
-    gt_ajustado['images'].append({
-      'id': img_id,
-      'width': width,
-      'height': height,
-      'file_name': file_name
+def add_images_to_json(images_anns, dict):
+  dict['images'] = list()
+  for img in images_anns:
+    dict['images'].append({
+        'id': img['id'],
+        'width': img['width'],
+        'height': img['height'],
+        'file_name': img['file_name']
     })
+  return dict
 
-  gt_ajustado['annotations'] = list()
-  for ann in gt['annotations']:
-    id = ann['id']
-    image_id = ann['image_id']
-    category_id= ann['category_id']
-    bbox  = ann['bbox']
-    area = ann['area']
-    gt_ajustado['annotations'].append({
-        'id': id,
-        'image_id': image_id,
-        'category_id': category_id,
-        'bbox': bbox,
+def add_annotations_to_json(annotations, dict):
+  dict['annotations'] = list()
+  for ann in annotations:
+    dict['annotations'].append({
+        'id': ann['id'],
+        'image_id': ann['image_id'],
+        'category_id': ann['category_id'],
+        'bbox': ann['bbox'],
         'iscrowd':0,
-        'area':area
+        'area':ann['area']
     })
+  return dict
 
-  gt_ajustado['categories'] = list()
-  for category in gt['categories']:
-    id = category['id']
-    name = category['name']
-    gt_ajustado['categories'].append({
-        'id': id,
-        'name': name
+def add_categories_to_json(categories, dict):
+  dict['categories'] = list()
+  for cat in categories:
+    dict['categories'].append({
+        'id': cat['id'],
+        'name': cat['name']
     })
+  return dict
 
-
+def save_json(dict, caminho_arquivo_json):
   with open(caminho_arquivo_json, 'w') as arquivo:
-      json.dump(gt_ajustado, arquivo, indent=4)
+      json.dump(dict, arquivo, indent=4)
+
+def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
+  gt_ajustado = dict()
+  gt_ajustado = add_images_to_json(gt['images'], gt_ajustado)
+  gt_ajustado = add_annotations_to_json(gt['annotations'], gt_ajustado)
+  gt_ajustado = add_categories_to_json(gt['categories'], gt_ajustado)
+  save_json(gt_ajustado, caminho_arquivo_json)
   return caminho_arquivo_json
   
    
@@ -144,7 +141,7 @@ def get_prediction_for_image_id(gt_annotation, predictions):
 def calc_iou(gt_ann, pred_anns):
   ious = []
   gt_bbox = gt_ann['bbox']
-  for pred_ann in pred_anns: # Compute iou for each prediction with the gt
+  for pred_ann in pred_anns:
     pred_bbox = pred_ann['bbox']
     iou = bbox_iou(gt_bbox, pred_bbox)
     ious.append(iou)
@@ -159,40 +156,12 @@ def mIoU(gt_json_path, predictions_json, thr_score):
       ious.extend(calc_iou(gt_ann, pred_anns))
   return np.mean(ious)
 
-def verificar_todas_marcadas(list_ann):
-  for ann in list_ann:
-    if ann['Marked'] != True:
-      return False
-  return False
-
-# Comparar cada bounding do gt com todas predições
-# Salvar o melhor_iou e a predição q deu esse iou
-# Depois de percorrer todaas predições
-# Markar a melhor predição e o ann do groundtruth
-# Assim que acabar de percorrer a lista de ann do groundth
-# Verificar se existem predições sobrando
-# Todas eu sobrarem são FP, pois marcam objetos que não existem, pois todos reais objetos já foram marcados junto a uma anotação do gt
-# Se a lista de predições estiver vazia siginifica que todas anotações sobrando no groundtruth são FN, pois não há predições relativa a elas
-
-# FN: Existem 2 sitações
-# (1) Todas minhas predições ja foram marcadas (associadas a uma bounding box do gt)
-# (2) Não achei nenhuma bounding box nas predições que tenha iou com o gt. Neste caso a lista de predições possui predições não marcadas.
-
-# TP: Exite 1 situação
-# (1) IoU >= thr e a mesma classe
-
-# FP: Existem 2 situações
-# (1) A predição não possuim IoU com o groundtruth. Todos elementos do groundtruth estão marcadas mas existem elementos não marcados na lista de predições.
-# (2) O IoU é >= thr, porém a classe está errada.
-
 def no_more_predictions(gt_anns):
-  pred = []
-  true = []
-
+  preds, trues = [], []
   for ann_left in gt_anns:
-    true.append(ann_left["category_id"])
-    pred.append(-1)
-  return true, pred
+    trues.append(ann_left["category_id"])
+    preds.append(-1)
+  return trues, preds
 
 def match_best_class_and_best_iou(list_of_predictions, ann_true):
   best_iou = 0
