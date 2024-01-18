@@ -291,4 +291,4 @@ def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
   os.remove(gt_json_temp)
   y_true, y_pred, classes = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0], verbose=False)
   f1_score = classification_metrics(y_pred, y_true, classes, verbose=True)
-#   return (map + miou + f1_score)/3
+  return (map + miou + f1_score)/3
