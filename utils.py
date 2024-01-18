@@ -1,5 +1,3 @@
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
 from sklearn.metrics import precision_recall_fscore_support
 import seaborn as sns;
 from sklearn.metrics import confusion_matrix
@@ -10,14 +8,16 @@ import os
 
 def calc_false_negatives_rate(num_classes, conf_matrix, verbose=True):
   _output = '\n'
+  fn_rate_list = []
   for i in range(1, num_classes):
     false_negatives = conf_matrix[i, 0]
     total_true_positives = np.sum(conf_matrix[i, 1:])
     fn_rate = false_negatives / total_true_positives if total_true_positives != 0 else 0
+    fn_rate_list.append(fn_rate)
     _output+= f"Taxa de Falsos Negativos para a Classe {i}: {fn_rate*100}\n"
   if verbose:
     print(_output)
-  return fn_rate
+  return fn_rate_list
 
 def draw_confusion_matrix(true,preds, verbose=True):
   num_classes = len(set(np.concatenate((preds, true))))
@@ -56,7 +56,7 @@ def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='w
     print(f'mean F1-Score: {f1_score_mean/len(classes)}')
 
   draw_confusion_matrix(groundtruth_vetor,predito_vetor, verbose=verbose)
-  return f1_score_mean/len(classes)
+  return f1_score_mean/len(classes), precision_mean/len(classes), recall_mean/len(classes)
 
 def add_images_to_json(images_anns, dict):
   dict['images'] = list()
@@ -106,20 +106,6 @@ def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
 def cls():
     os.system('cls' if os.name=='nt' else 'clear')
   
-# TODO: 
-# Verbose: Não esta funionando corretamente
-def coco_metric(gt_json, predictions_json, thr_score= 0.0, verbose=True):
-  predictions = thr_score_on_prediction(predictions_json, thr_score)
-  gt_coco = COCO(gt_json)
-  pred_coco = gt_coco.loadRes(predictions)
-  coco_eval = COCOeval(gt_coco, pred_coco, 'bbox')
-  coco_eval.evaluate()
-  coco_eval.accumulate()
-  coco_eval.summarize()
-  if not verbose:
-    cls()
-  return coco_eval.stats[0]
-
 def bbox_iou(bbox1, bbox2):
     x1, y1, w1, h1 = bbox1
     x2, y2, w2, h2 = bbox2
@@ -150,17 +136,6 @@ def calc_iou(gt_ann, pred_anns):
     iou = bbox_iou(gt_bbox, pred_bbox)
     ious.append(iou)
   return ious
-
-def mIoU(gt_json_path, predictions_json, thr_score, verbose=True):
-  predictions = thr_score_on_prediction(predictions_json, thr_score)
-  gt_coco = COCO(gt_json_path)
-  ious = []
-  for gt_ann in gt_coco.dataset['annotations']:
-      pred_anns = get_prediction_for_image_id(gt_ann, predictions)
-      ious.extend(calc_iou(gt_ann, pred_anns))
-  if verbose:
-    print(f'\nmIoU: {np.mean(ious)}')
-  return np.mean(ious)
 
 def no_more_predictions(gt_anns):
   preds, trues = [], []
@@ -282,13 +257,3 @@ def open_jsons(paths):
         with open(path, 'r') as f:
             jsons.append(json.load(f))
     return jsons
-
-def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
-  gt_json, predictions_json = open_jsons([coco_gt_path, coco_result_path])
-  gt_json_temp = ajust_ground_truth(gt_json)
-  map = coco_metric(gt_json_temp, predictions_json, thr_score= thr_score, verbose=True)
-  miou = mIoU(gt_json_temp, predictions_json, thr_score, verbose=True)
-  os.remove(gt_json_temp)
-  y_true, y_pred, classes = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0], verbose=False)
-  f1_score = classification_metrics(y_pred, y_true, classes, verbose=True)
-  return (map + miou + f1_score)/3
