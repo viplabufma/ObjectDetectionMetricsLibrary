@@ -1,64 +1,62 @@
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from sklearn.metrics import precision_recall_fscore_support
-import sklearn
 import seaborn as sns;
-from sklearn.metrics import cohen_kappa_score, roc_auc_score, roc_curve,accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import confusion_matrix
 import json
 from tqdm import tqdm
 import numpy as np
 import os
 
-def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='weighted'):
-  def draw_confusion_matrix(true,preds):
-    num_classes = len(set(np.concatenate((preds, true))))
-    conf_matx = confusion_matrix(true, preds)
-    # Calcula a taxa de falsos negativos para cada classe
-    for i in range(1, num_classes):
-      false_negatives = conf_matx[i, 0]  # Falsos negativos para a classe i
-      total_true_positives = np.sum(conf_matx[i, 1:])  # Verdadeiros positivos para a classe i
+def calc_false_negatives_rate(num_classes, conf_matrix, verbose=True):
+  _output = '\n'
+  for i in range(1, num_classes):
+    false_negatives = conf_matrix[i, 0]
+    total_true_positives = np.sum(conf_matrix[i, 1:])
+    fn_rate = false_negatives / total_true_positives if total_true_positives != 0 else 0
+    _output+= f"Taxa de Falsos Negativos para a Classe {i}: {fn_rate*100}\n"
+  if verbose:
+    print(_output)
+  return fn_rate
 
-      fn_rate = false_negatives / total_true_positives if total_true_positives != 0 else 0
-      print(f"Taxa de Falsos Negativos para a Classe {i}: {fn_rate*100}")
+def draw_confusion_matrix(true,preds, verbose=True):
+  num_classes = len(set(np.concatenate((preds, true))))
+  conf_matx = confusion_matrix(true, preds)
+  calc_false_negatives_rate(num_classes, conf_matx, verbose=verbose)
+  if verbose:
+    sns.heatmap(conf_matx, annot=True, annot_kws={"size": 12}, fmt='g', cbar=False, cmap="viridis")
+  return conf_matx
 
-    sns.heatmap(conf_matx, annot=True,annot_kws={"size": 12},fmt='g', cbar=False, cmap="viridis")
+def calculate_f1_score_per_class(vetor_groundtruth, vetor_predicoes, classes, average= 'weighted'):
+    precision, recall, f1_score, _ = precision_recall_fscore_support(vetor_groundtruth, vetor_predicoes, labels=classes, average=None)
+    results_per_class = {}
+    for i, class_id in enumerate(classes):
+        results_per_class[class_id] = {
+            'Precision': precision[i],
+            'Recall': recall[i],
+            'F1-score': f1_score[i]
+        }
+    return results_per_class
 
-  def calculate_f1_score_per_class(vetor_groundtruth, vetor_predicoes, classes, average= 'weighted'):
-      # Calcular precision, recall e f1-score para cada classe
-      precision, recall, f1_score, _ = precision_recall_fscore_support(vetor_groundtruth, vetor_predicoes, labels=classes, average=None)
-
-      # Criar um dicionário para armazenar os resultados por classe
-      results_per_class = {}
-      for i, class_id in enumerate(classes):
-          results_per_class[class_id] = {
-              'Precision': precision[i],
-              'Recall': recall[i],
-              'F1-score': f1_score[i]
-          }
-
-      return results_per_class
-
+def classification_metrics(predito_vetor, groundtruth_vetor, classes, average='weighted', verbose=True):
+  _output = ''
   f1_score_per_class = calculate_f1_score_per_class(groundtruth_vetor, predito_vetor, classes, average= average)
+  precision_mean, recall_mean, f1_score_mean  = 0, 0, 0
 
-  precision_mean = 0
-  recall_mean = 0
-  f1_score_mean = 0
-  # Imprimir os resultados
   for class_id, metrics in f1_score_per_class.items():
-      print(f'Classe {class_id}: Precision={metrics["Precision"]}, Recall={metrics["Recall"]}, F1-score={metrics["F1-score"]}')
+      _output += f'Classe {class_id}: Precision={metrics["Precision"]}, Recall={metrics["Recall"]}, F1-score={metrics["F1-score"]}\n'
       precision_mean += metrics['Precision']
       recall_mean += metrics['Recall']
       f1_score_mean += metrics['F1-score']
+  
+  if verbose:
+    print(_output)
+    print(f'mean Precision: {precision_mean/len(classes)}')
+    print(f'mean Recall: {recall_mean/len(classes)}')
+    print(f'mean F1-Score: {f1_score_mean/len(classes)}')
 
-  print(f'mean Precision: {precision_mean/len(classes)}')
-  print(f'mean Recall: {recall_mean/len(classes)}')
-  print(f'mean F1-Score: {f1_score_mean/len(classes)}')
-
-  draw_confusion_matrix(groundtruth_vetor,predito_vetor)
-
+  draw_confusion_matrix(groundtruth_vetor,predito_vetor, verbose=verbose)
   return f1_score_mean/len(classes)
-
-
 
 def add_images_to_json(images_anns, dict):
   dict['images'] = list()
@@ -104,9 +102,13 @@ def ajust_ground_truth(gt, caminho_arquivo_json = "ajusted_gt.json"):
   gt_ajustado = add_categories_to_json(gt['categories'], gt_ajustado)
   save_json(gt_ajustado, caminho_arquivo_json)
   return caminho_arquivo_json
-  
    
-def coco_metric(gt_json, predictions_json, thr_score= 0.0):
+def cls():
+    os.system('cls' if os.name=='nt' else 'clear')
+  
+# TODO: 
+# Verbose: Não esta funionando corretamente
+def coco_metric(gt_json, predictions_json, thr_score= 0.0, verbose=True):
   predictions = thr_score_on_prediction(predictions_json, thr_score)
   gt_coco = COCO(gt_json)
   pred_coco = gt_coco.loadRes(predictions)
@@ -114,6 +116,8 @@ def coco_metric(gt_json, predictions_json, thr_score= 0.0):
   coco_eval.evaluate()
   coco_eval.accumulate()
   coco_eval.summarize()
+  if not verbose:
+    cls()
   return coco_eval.stats[0]
 
 def bbox_iou(bbox1, bbox2):
@@ -147,13 +151,15 @@ def calc_iou(gt_ann, pred_anns):
     ious.append(iou)
   return ious
 
-def mIoU(gt_json_path, predictions_json, thr_score):
+def mIoU(gt_json_path, predictions_json, thr_score, verbose=True):
   predictions = thr_score_on_prediction(predictions_json, thr_score)
   gt_coco = COCO(gt_json_path)
   ious = []
   for gt_ann in gt_coco.dataset['annotations']:
       pred_anns = get_prediction_for_image_id(gt_ann, predictions)
       ious.extend(calc_iou(gt_ann, pred_anns))
+  if verbose:
+    print(f'\nmIoU: {np.mean(ious)}')
   return np.mean(ious)
 
 def no_more_predictions(gt_anns):
@@ -256,20 +262,19 @@ def get_all_predictions_from_image_id(predictions_json, id):
 def get_classes_id_from_coco_gt_json(gt_json, skip_classes = []):
   return [c["id"] for c in gt_json["categories"] if c['id'] not in skip_classes]
   
-def generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes = []):
+def generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes = [], verbose= True):
   predictions_json = thr_score_on_prediction(predictions_json, thr_score)
   ids_das_imagens = get_all_ids_from_coco_gt_json(gt_json)
   y_true_full, y_pred_full = [], []
   classes = get_classes_id_from_coco_gt_json(gt_json, skip_classes)
   
-  for id in tqdm(ids_das_imagens):
+  for id in tqdm(ids_das_imagens, disable= not verbose):
     preds = get_all_predictions_from_image_id(predictions_json, id)
     gts = get_all_bboxes_from_image_id(gt_json, id)
     y_true, y_pred = generate_preds_true_vector_from_anns(gts, preds, iou_thr)
     y_true_full.extend(y_true)
     y_pred_full.extend(y_pred)
   return y_true_full, y_pred_full, classes
-
 
 def open_jsons(paths):
     jsons = []
@@ -281,10 +286,9 @@ def open_jsons(paths):
 def calc_metrics(coco_gt_path, coco_result_path, thr_score=0.4, iou_thr=0.5):
   gt_json, predictions_json = open_jsons([coco_gt_path, coco_result_path])
   gt_json_temp = ajust_ground_truth(gt_json)
-  map = coco_metric(gt_json_temp, predictions_json, thr_score= thr_score)
-  miou = mIoU(gt_json_temp, predictions_json, thr_score)
-  print(f'mIoU: {miou}')
+  map = coco_metric(gt_json_temp, predictions_json, thr_score= thr_score, verbose=True)
+  miou = mIoU(gt_json_temp, predictions_json, thr_score, verbose=True)
   os.remove(gt_json_temp)
-  y_true, y_pred, classes =generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0])
-  f1_score = classification_metrics(y_pred, y_true,classes)
+  y_true, y_pred, classes = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=[0], verbose=False)
+  f1_score = classification_metrics(y_pred, y_true, classes, verbose=True)
 #   return (map + miou + f1_score)/3
