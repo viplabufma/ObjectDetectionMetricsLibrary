@@ -21,3 +21,24 @@ acuracy(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, sk
 balanced_accuracy(gt_json, predictions_json, thr_score= 0.4, verbose=True, iou_thr=0.5, skip_classes=[0])
 ```
 
+## util Functions
+* open_jsons(array_of _paths): read jsons and return the jsons
+* ajust_ground_truth(gt_json): make a simplified json with only the infos needed.
+ 
+ ## Parameters:
+ * thr_score: threshold of score. All detections bellow that threshold will be discarted.
+ * iou_thr: threshold of iou. The threshold to two bounding boxes be considerar as match (or refering to the same object)
+ * skip_classes: a array of the classes wanted to be skiped in the metric.
+ * average: how to compute some metrics. It can be 'average', 'macro' and 'micro'.
+
+ 
+|         Metrics        |           Function          |
+|:----------------------:|:---------------------------:|
+|  Intersect Over Union  |            mIoU()           |
+| Mean Average Precision |        coco_metric()        |
+| Precision              | precision_recall_f1_score() |
+| Recall                 | precision_recall_f1_score() |
+| F1 Score               | precision_recall_f1_score() |
+| False Negative Rate    |       false_negative()      |
+| Accuracy               |          accuracy()         |
+| Balanced Accuracy      |     balanced_accuracy()     |

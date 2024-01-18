@@ -43,7 +43,7 @@ def false_negatives(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou
   num_classes = len(set(np.concatenate((y_pred, y_true))))
   return calc_false_negatives_rate(num_classes, conf_matrix, verbose=False)
 
-def acuracy(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
+def accuracy(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
   y_true, y_pred,_  = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=skip_classes, verbose=False)
   acc = accuracy_score(y_true, y_pred)
   if verbose:
