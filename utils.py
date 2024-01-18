@@ -20,9 +20,7 @@ def calc_false_negatives_rate(num_classes, conf_matrix, verbose=True):
   return fn_rate_list
 
 def draw_confusion_matrix(true,preds, verbose=True):
-  num_classes = len(set(np.concatenate((preds, true))))
   conf_matx = confusion_matrix(true, preds)
-  calc_false_negatives_rate(num_classes, conf_matx, verbose=verbose)
   if verbose:
     sns.heatmap(conf_matx, annot=True, annot_kws={"size": 12}, fmt='g', cbar=False, cmap="viridis")
   return conf_matx
