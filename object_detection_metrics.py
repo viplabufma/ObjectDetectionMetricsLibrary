@@ -5,7 +5,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import numpy as np
 import os
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score
 
 def mIoU(gt_json_path, predictions_json, thr_score, verbose=True):
   predictions = thr_score_on_prediction(predictions_json, thr_score)
@@ -45,6 +45,15 @@ def false_negatives(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou
 
 def acuracy(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
   y_true, y_pred,_  = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=skip_classes, verbose=False)
+  acc = accuracy_score(y_true, y_pred)
   if verbose:
-    print(f'\nAcuracy: {accuracy_score(y_true, y_pred)}')
-  return accuracy_score(y_true, y_pred)
+    print(f'\nAcuracy: {acc}')
+  return acc
+
+def balanced_accuracy(gt_json, predictions_json, thr_score= 0.0, verbose=True, iou_thr=0.5, skip_classes=[0]):
+  y_true, y_pred,_  = generate_true_and_pred_vector(gt_json, predictions_json, thr_score, iou_thr, skip_classes=skip_classes, verbose=False)
+  acc = balanced_accuracy_score(y_true, y_pred)
+  if verbose:
+    print(f'\nBalanced Acuracy: {acc}')
+  return acc
+
