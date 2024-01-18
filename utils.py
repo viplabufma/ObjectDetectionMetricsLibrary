@@ -228,52 +228,45 @@ def find_best_match(list_of_predictions, ann_true):
     best_index, best_iou  = match_best_only_iou(list_of_predictions, ann_true)
     return best_index, best_iou
 
+def isEmpty(list):
+  return len(list) == 0
 
-# monta o y_true e y_pred para uma imagem a partir da lista de predições e gt dessa imagem
-def generate_preds_true_vector_from_anns(gts, predictions_anns, iou_thr):
-  y_pred = []
-  y_true = []
-  gt_anns = []
-  pred_anns = predictions_anns.copy()
-  gt_anns = gts.copy()
+def get_classes_from_pred_and_groundtruth(gt_anns, pred_anns):
+  pred_class = pred_anns['category_id']
+  true_class = gt_anns['category_id']
+  return pred_class, true_class
 
-  i=0
-  while i < len(gt_anns):
-    ann_true = gt_anns[i]
-    #Fn
-    if len(pred_anns) == 0:
-      t, p = no_more_predictions(gt_anns)
-      y_pred.extend(p)
-      y_true.extend(t)
+def generate_preds_true_vector_from_anns(gt_anns, pred_anns, iou_thr):
+  y_pred, y_true  = [], []
+
+  for index, ann_gt in enumerate(gt_anns):
+    if isEmpty(pred_anns): # False Negative
+      trues, preds = no_more_predictions(gt_anns)
+      y_pred.extend(preds)
+      y_true.extend(trues)
       gt_anns = []
       break
 
-    index_best_pred, best_iou = find_best_match(pred_anns, ann_true)
+    index_best_pred, best_iou = find_best_match(pred_anns, ann_gt)
     if best_iou > iou_thr:
-      pred_best = pred_anns[index_best_pred]
-      class_pred = pred_best["category_id"]
-      class_true = ann_true["category_id"]
-      #melhor match tem a mesma classe logo TP
-      if class_pred == class_true:
-        #TP
+      best_pred = pred_anns[index_best_pred]
+      class_pred, class_true = get_classes_from_pred_and_groundtruth(ann_gt, best_pred)
+      if class_pred == class_true: # True Positive
         y_pred.append(class_pred)
         y_true.append(class_true)
-        gt_anns.pop(i)
+        gt_anns.pop(index)
         pred_anns.pop(index_best_pred)
-      # melhor match não tem a mesma classe logo foi por IoU, ou seja tem IoU> 0.5, ou seja achou o objeto porem com classe errada
-      else:
-        #FP
+      else: # False Postive: IoU >= thr, porém a classe está errada.
         y_pred.append(class_pred)
         y_true.append(class_true)
-        gt_anns.pop(i)
+        gt_anns.pop(index)
         pred_anns.pop(index_best_pred)
-
-    i+=1
-  for pred in pred_anns:
+    
+  for pred in pred_anns: # False Positive: A predição não possuim IoU com o groundtruth. Todos elementos do groundtruth estão marcadas mas existem elementos não marcados na lista de predições.
     y_pred.append(pred["category_id"])
     y_true.append(-1)
-
-  for gt in gt_anns:
+  
+  for gt in gt_anns: # False Negative: Todas minhas predições ja foram marcadas (associadas a uma bounding box do gt)
     y_pred.append(-1)
     y_true.append(gt["category_id"])
 
