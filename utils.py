@@ -12,7 +12,9 @@ def calc_false_negatives_rate(num_classes, conf_matrix, verbose=True):
   for i in range(1, num_classes):
     false_negatives = conf_matrix[i, 0]
     total_true_positives = np.sum(conf_matrix[i, 1:])
-    fn_rate = false_negatives / total_true_positives if total_true_positives != 0 else 0
+    # print(false_negatives)
+    # print(total_true_positives)
+    fn_rate = false_negatives / (total_true_positives+false_negatives) if  (total_true_positives+false_negatives) != 0 else 0
     fn_rate_list.append(fn_rate)
     _output+= f"Taxa de Falsos Negativos para a Classe {i}: {fn_rate*100}\n"
   if verbose:
