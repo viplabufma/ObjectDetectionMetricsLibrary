@@ -10,6 +10,7 @@
 | EfficientNetB4 	| 0.92466  	|     <a href="https://drive.google.com/file/d/1cQAjsFR4c4KJd5CWTd4SwqwL0aV_SUUt/view?usp=sharing">Weight</a> 	|
 | EfficientNetB5 	| 0.93841  	|    <a href="https://drive.google.com/file/d/1xyuygsXW35aDMXa64gF0OFpRXwaif804/view?usp=sharing">Weight</a>   	|
 | EfficientNetB6 	| 0.94570  	|     <a href="https://drive.google.com/file/d/1_0-IkJXF0GsAUaUkgEiTKYGvIFsFzp5W/view?usp=sharing">Weight</a> 	|
+| EfficientNetB7 	| 0.94570  	|     <a href="https://drive.google.com/file/d/1CY0f7JjbZo0IHxId2MWJq4jy0v8o0vtO/view?usp=sharing">Weight</a> 	|
 | Xception       	| 0.93686  	|      <a href="https://drive.google.com/file/d/1Qt9Gb0HhTES0tmS80WvDaOGoVyyEbWtX/view?usp=sharing">Weight</a> 	|
 | InceptionV3    	| 0.91457  	|     <a href="https://drive.google.com/file/d/1OFacvx_nLlEXJujeFCSxmxXPqxZpA53Y/view?usp=sharing">Weight</a> 	|
 | ResNet-50      	| 0.91457  	|      <a href="https://drive.google.com/file/d/15PMFwBXjZGVPZM-auvPBHhLm5xRXTiHh/view?usp=sharing">Weight</a> 	|
