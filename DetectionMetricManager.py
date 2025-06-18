@@ -1,3 +1,9 @@
+'''
+Author: Matheus Levy
+Organization: Viplab - UFMA
+GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
+'''
+
 from pycocotools.coco import COCO
 from typing import Dict, List, Tuple, Optional, Union
 from metrics import DetectionMetrics

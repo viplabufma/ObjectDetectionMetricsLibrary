@@ -1,3 +1,8 @@
+'''
+Author: Matheus Levy
+Organization: Viplab - UFMA
+GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
+'''
 from DetectionMetricManager import DetectionMetricsManager
 import numpy as np
 
