@@ -18,19 +18,19 @@ class DetectionMetricsManager:
     """
     
     def __init__(self, gt_path: str, result_path: str):
-        """
-        Inicializa o gerenciador com caminhos para os arquivos de dados.
-        
-        Args:
-            gt_path: Caminho para o JSON de ground truth (COCO format)
-            result_path: Caminho para o JSON de resultados (COCO predictions)
-        """
+        self._initialize(gt_path, result_path)
+    
+    def _initialize(self, gt_path: str, result_path: str):
         self.gt_path = gt_path
         self.result_path = result_path
         self.gt_coco: Optional[COCO] = None
         self.dt_coco: Optional[COCO] = None
         self.names: Dict[int, str] = {}
-    
+
+    def update_data(self, gt_path: str, result_path: str) -> None:
+        self._initialize(gt_path, result_path)
+        self.load_data()
+
     def load_data(self) -> None:
         """Carrega e processa os arquivos JSON de ground truth e resultados."""
         with io.StringIO() as buf, contextlib.redirect_stdout(buf):
@@ -205,6 +205,10 @@ if __name__ == "__main__":
         result_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/tood_predicts_bbox.bbox.json"
     )
     manager.load_data()
+    # manager.update_data(
+    #     gt_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/_annotations.coco.json",
+    #     result_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/tood_predicts_bbox.bbox.json"
+    # )
     metrics = manager.calculate_metrics(exclude_class=[0])
     custom_metrics = manager.calculate_metrics(iou_thr=0.5, conf_thr=0.3, exclude_class=[0])
     print_metrics(custom_metrics, manager.names, title="Custom Metrics (IoU=0.5, Conf=0.3)")

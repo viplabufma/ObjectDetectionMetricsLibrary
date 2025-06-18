@@ -353,7 +353,7 @@ class DetectionMetrics:
         }
 
         if (self.gt_coco is not None or self.predictions_coco is not  None):
-            global_map50, global_map75, global_map = self._compute_map(
+            global_map, global_map50, global_map75 = self._compute_map(
                 self.gt_coco, 
                 self.predictions_coco)
             metrics['global']['mAP50'] = global_map50
