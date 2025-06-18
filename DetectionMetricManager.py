@@ -1,26 +1,26 @@
-import json
 from pycocotools.coco import COCO
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 from metrics import DetectionMetrics
 import contextlib
 import io
 
 class DetectionMetricsManager:
     """
-    Gerencia o cálculo de métricas de detecção de objetos comparando ground truth e resultados.
+    Manages the calculation of object detection metrics by comparing ground truth and prediction results.
     
     Attributes:
-        gt_path (str): Caminho para o arquivo JSON de ground truth (formato COCO)
-        result_path (str): Caminho para o arquivo JSON de resultados (formato COCO predictions)
-        gt_coco (COCO): Objeto COCO com dados de ground truth
-        dt_coco (COCO): Objeto COCO com dados de predições
-        names (Dict[int, str]): Mapeamento de category_id para nome da classe
+        gt_path (str): Path to ground truth JSON file (COCO format)
+        result_path (str): Path to prediction results JSON file (COCO predictions format)
+        gt_coco (COCO): COCO object containing ground truth data
+        dt_coco (COCO): COCO object containing prediction data
+        names (Dict[int, str]): Mapping of category_id to class name
     """
     
     def __init__(self, gt_path: str, result_path: str):
         self._initialize(gt_path, result_path)
     
     def _initialize(self, gt_path: str, result_path: str):
+        """Initialize paths and empty data containers"""
         self.gt_path = gt_path
         self.result_path = result_path
         self.gt_coco: Optional[COCO] = None
@@ -28,54 +28,56 @@ class DetectionMetricsManager:
         self.names: Dict[int, str] = {}
 
     def update_data(self, gt_path: str, result_path: str) -> None:
+        """Update data sources and reload all data"""
         self._initialize(gt_path, result_path)
         self.load_data()
 
     def load_data(self) -> None:
-        """Carrega e processa os arquivos JSON de ground truth e resultados."""
+        """Load and process ground truth and prediction JSON files"""
+        # Suppress pycocotools output during loading
         with io.StringIO() as buf, contextlib.redirect_stdout(buf):
             self._load_coco_data()
             self._extract_class_names()
         
     def _load_coco_data(self) -> None:
-        """Carrega os arquivos usando a API COCO e prepara os dados."""
+        """Load files using COCO API and prepare data"""
         self.gt_coco = COCO(self.gt_path)
         self.dt_coco = self.gt_coco.loadRes(self.result_path)
         
     def _extract_class_names(self) -> None:
-        """Extrai o mapeamento de category_id para nome de classe."""
+        """Extract category_id to class name mapping"""
         self.names = {
             cat['id']: cat['name'] 
             for cat in self.gt_coco.dataset['categories']
         }
         
     def get_image_ids(self) -> List[int]:
-        """Obtém a lista de IDs de imagens presentes no ground truth."""
+        """Get list of image IDs present in ground truth"""
         return self.gt_coco.getImgIds()
     
     def get_annotations(self, img_id: int) -> Tuple[List[dict], List[dict]]:
         """
-        Obtém anotações de ground truth e predições para uma imagem específica.
+        Retrieve ground truth and prediction annotations for a specific image.
         
         Args:
-            img_id: ID da imagem
+            img_id: Image ID
             
         Returns:
-            Tuple com:
-            - Lista de anotações de ground truth
-            - Lista de predições
+            Tuple containing:
+            - List of ground truth annotations
+            - List of prediction annotations
         """
         gt_anns = self._load_ground_truth_annotations(img_id)
         pred_anns = self._load_prediction_annotations(img_id)
         return gt_anns, pred_anns
     
     def _load_ground_truth_annotations(self, img_id: int) -> List[dict]:
-        """Carrega anotações de ground truth para uma imagem específica."""
+        """Load ground truth annotations for a specific image"""
         ann_ids = self.gt_coco.getAnnIds(imgIds=img_id)
         return self.gt_coco.loadAnns(ann_ids)
     
     def _load_prediction_annotations(self, img_id: int) -> List[dict]:
-        """Carrega predições para uma imagem específica."""
+        """Load predictions for a specific image"""
         ann_ids = self.dt_coco.getAnnIds(imgIds=img_id)
         return self.dt_coco.loadAnns(ann_ids)
         
@@ -83,17 +85,17 @@ class DetectionMetricsManager:
         self, 
         iou_thr: float = 0.5, 
         conf_thr: float = 0.5,
-        exclude_class= None
-    ) -> dict:
+        exclude_class: list = None) -> dict:
         """
-        Calcula métricas de detecção para todo o dataset.
+        Calculate detection metrics for the entire dataset.
         
         Args:
-            iou_thr: Limiar de IoU para consideração de verdadeiro positivo
-            conf_thr: Limiar de confiança para consideração de predições
+            iou_thr: IoU threshold for true positive consideration
+            conf_thr: Confidence threshold for prediction consideration
+            exclude_class: List of class IDs to exclude from metrics
             
         Returns:
-            Dicionário com métricas calculadas
+            Dictionary with calculated metrics
         """
         metrics_calculator = DetectionMetrics(
             names=self.names,
@@ -108,27 +110,25 @@ class DetectionMetricsManager:
         return metrics_calculator.compute_metrics()
     
     def _process_all_images(self, metrics_calculator: DetectionMetrics) -> None:
-        """Processa todas as imagens através da calculadora de métricas."""
+        """Process all images through the metrics calculator"""
         img_ids = self.get_image_ids()
         for img_id in img_ids:
             gt_anns, pred_anns = self.get_annotations(img_id)
             metrics_calculator.process_image(gt_anns, pred_anns)
 
-def print_metrics(metrics: dict, class_names: dict, title: str = "Detection Metrics") -> None:
+def print_metrics(metrics: dict, class_names: dict) -> None:
     """
-    Imprime métricas de detecção de objetos de forma organizada e legível.
+    Print object detection metrics in an organized, readable format.
     
     Args:
-        metrics (dict): Dicionário de métricas retornado por DetectionMetrics.compute_metrics()
-        class_names (Dict[int, str]): Mapeamento de category_id para nome da classe
-        title (str): Título para o cabeçalho da impressão
+        metrics: Metrics dictionary returned by DetectionMetrics.compute_metrics()
+        class_names: Mapping of category_id to class name
     """
-    # Constantes de formatação
+    # Formatting constants
     HEADER_WIDTH = 80
     METRIC_WIDTH = 20
-    VALUE_WIDTH = 10
     
-    # Funções auxiliares
+    # Helper function to format metric values
     def format_metric(value, is_percentage=True):
         if value is None:
             return "N/A"
@@ -136,17 +136,19 @@ def print_metrics(metrics: dict, class_names: dict, title: str = "Detection Metr
             return f"{value:.4f}" if is_percentage else f"{value:.2f}"
         return str(value)
     
+    # Helper function to print metric sections
     def print_section(title, data, is_class=False):
         print(f"\n{'=' * HEADER_WIDTH}")
         print(f"{title.upper():^{HEADER_WIDTH}}")
         print('=' * HEADER_WIDTH)
         
         if is_class:
-            # Cabeçalho para métricas de classe
+            # Class metrics header
             print(f"{'Class':<25} | {'Precision':<{METRIC_WIDTH}} | {'Recall':<{METRIC_WIDTH}} | "
                   f"{'F1-Score':<{METRIC_WIDTH}} | {'Support':<{METRIC_WIDTH}}")
             print('-' * HEADER_WIDTH)
             
+            # Print metrics for each class
             for cls_id, cls_data in data.items():
                 if cls_id == 'global':
                     continue
@@ -158,17 +160,17 @@ def print_metrics(metrics: dict, class_names: dict, title: str = "Detection Metr
                       f"{format_metric(cls_data.get('f1')):<{METRIC_WIDTH}} | "
                       f"{format_metric(cls_data.get('support'), False):<{METRIC_WIDTH}}")
         else:
-            # Métricas globais
+            # Global metrics header
             global_data = data.get('global', {})
             print(f"{'METRIC':<30} | {'VALUE'}")
             print('-' * HEADER_WIDTH)
             
-            # Métricas básicas
+            # Print basic metrics
             for metric in ['precision', 'recall', 'f1', 'support']:
                 if metric in global_data:
                     print(f"{metric.capitalize():<30} | {format_metric(global_data[metric])}")
             
-            # Métricas mAP
+            # Print mAP metrics if available
             map_metrics = {
                 'mAP@0.5:0.95': global_data.get('mAP'),
                 'mAP@0.5': global_data.get('mAP50'),
@@ -179,14 +181,14 @@ def print_metrics(metrics: dict, class_names: dict, title: str = "Detection Metr
                 if value is not None:
                     print(f"{metric:<30} | {format_metric(value)}")
     
-    # Imprimir métricas globais
+    # Print global metrics section
     print_section("Global Metrics", metrics)
     
-    # Imprimir métricas por classe
+    # Print per-class metrics section if available
     if any(cls_id != 'global' for cls_id in metrics.keys()):
         print_section("Per-Class Metrics", metrics, is_class=True)
     
-    # Resumo final
+    # Print final summary
     global_data = metrics.get('global', {})
     if 'mAP' in global_data:
         print(f"\n{' SUMMARY ':=^{HEADER_WIDTH}}")
@@ -198,17 +200,3 @@ def print_metrics(metrics: dict, class_names: dict, title: str = "Detection Metr
         print(f"→ F1-Score:     {format_metric(global_data.get('f1'))}")
         print(f"→ Support:      {format_metric(global_data.get('support'), False)}")
         print('=' * HEADER_WIDTH)
-
-if __name__ == "__main__":
-    manager = DetectionMetricsManager(
-        gt_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/_annotations.coco.json",
-        result_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/tood_predicts_bbox.bbox.json"
-    )
-    manager.load_data()
-    # manager.update_data(
-    #     gt_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/_annotations.coco.json",
-    #     result_path="/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/tood_predicts_bbox.bbox.json"
-    # )
-    metrics = manager.calculate_metrics(exclude_class=[0])
-    custom_metrics = manager.calculate_metrics(iou_thr=0.5, conf_thr=0.3, exclude_class=[0])
-    print_metrics(custom_metrics, manager.names, title="Custom Metrics (IoU=0.5, Conf=0.3)")

@@ -1,0 +1,56 @@
+{
+    "info": {
+        "year": "2020",
+        "version": "1",
+        "description": "Exported from roboflow.ai",
+        "contributor": "Roboflow",
+        "url": "https://app.roboflow.ai/datasets/hard-hat-sample/1",
+        "date_created": "2000-01-01T00:00:00+00:00"
+    },
+    "categories": [
+        {
+            "id": 0,
+            "name": "person",
+            "supercategory": "none"
+        }
+    ],
+    "images": [
+        {
+            "id": 0,
+            "license": 1,
+            "file_name": "0001.jpg",
+            "height": 275,
+            "width": 490,
+            "date_captured": "2020-07-20T19:39:26+00:00"
+        }
+    ],
+    "annotations": [
+        {
+            "id": 0,
+            "image_id": 0,
+            "category_id": 0,
+            "bbox": [10, 10, 20, 20],
+            "area": 123,
+            "segmentation": [],
+            "iscrowd": 0
+        },
+        {
+            "id": 1,
+            "image_id": 0,
+            "category_id": 0,
+            "bbox": [50, 50, 20, 20],
+            "area": 123,
+            "segmentation": [],
+            "iscrowd": 0
+        },
+        {
+            "id": 2,
+            "image_id": 0,
+            "category_id": 0,
+            "bbox": [100, 100, 20, 20],
+            "area": 123,
+            "segmentation": [],
+            "iscrowd": 0
+        }
+    ]
+}

@@ -70,7 +70,6 @@ class DetectionMetrics:
         matrix_size = len(self.class_map) + 1
         self.matrix = np.zeros((matrix_size, matrix_size), dtype=int)
     
-
     def process_image(self, gt_anns: list, pred_anns: list) -> None:
         # Filtra classes excluídas
         gt_anns = [gt for gt in gt_anns if gt['category_id'] not in self.exclude_classes]
@@ -304,6 +303,24 @@ class DetectionMetrics:
             self.stats[cls_id]['fn'] += fn
             self.stats[cls_id]['support'] += (tp + fn)
     
+    @staticmethod
+    def precision(tp: int, fp: int) -> float:
+        return tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    
+    @staticmethod
+    def recall(tp: int, fn: int) -> float:
+        return  tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    
+    @staticmethod
+    def f1(precision: float, recall: float) -> float:
+        return 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    
+    @staticmethod
+    def precision_recall_f1(tp: int, fp: int, fn: int) -> float:
+        precision = DetectionMetrics.precision(tp=tp, fp=fp)
+        recall = DetectionMetrics.recall(tp=tp, fn=fn)
+        return precision, recall, DetectionMetrics.f1(precision=precision, recall=recall)
+    
     def compute_metrics(self) -> dict:
         """
         Compute final evaluation metrics including mAP.
@@ -311,54 +328,46 @@ class DetectionMetrics:
         Returns:
             metrics (dict): Dictionary containing precision, recall, F1, and mAP metrics
         """
-        metrics = {}
-        total_tp = 0
-        total_fp = 0
-        total_fn = 0
-        total_support = 0
+        def TpFpFnSupport(cls_id):
+            return self.stats[cls_id]['tp'], self.stats[cls_id]['fp'], self.stats[cls_id]['fn'], self.stats[cls_id]['support']
         
-        # Compute per-class metrics and accumulate totals
-        for cls_id in self.class_map.keys():
-            tp = self.stats[cls_id]['tp']
-            fp = self.stats[cls_id]['fp']
-            fn = self.stats[cls_id]['fn']
-            support = self.stats[cls_id]['support']
-            
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-            
-            metrics[cls_id] = {
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'support': support
-            }
-            
+        def hasCOCOgroundtruth() -> bool:
+            return self.gt_coco is not None
+        def hasCOCOpredictions() -> bool:
+            return self.predictions_coco is not None
+        
+        def update_metrics_with_map(metrics,  global_map, global_map50, global_map75):
+            metrics['global']['mAP50'] = global_map50
+            metrics['global']['mAP75'] = global_map75
+            metrics['global']['mAP'] = global_map     
+            return metrics
+        
+        def compute_mAP_If_Possible(metrics):
+            if (hasCOCOgroundtruth() and hasCOCOpredictions()):
+                global_map, global_map50, global_map75 = self._compute_map( self.gt_coco, self.predictions_coco)
+                metrics = update_metrics_with_map(metrics, global_map, global_map50, global_map75)
+            return metrics
+        
+        def update_total_tp_fp_fn_support(total_tp, total_fp, total_fn, total_support, tp, fp, fn, support):
             total_tp += tp
             total_fp += fp
             total_fn += fn
             total_support += support
+            return total_tp, total_fp, total_fn, total_support
         
-        # Compute global metrics (micro-average)
-        global_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
-        global_recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
-        global_f1 = 2 * global_precision * global_recall / (global_precision + global_recall) if (global_precision + global_recall) > 0 else 0.0
+        metrics = {}
+        total_tp, total_fp, total_fn, total_support = 0, 0, 0, 0
+        
+        # Compute per-class mtotal_tpetrics and accumulate totals
+        for cls_id in self.class_map.keys():
+            tp, fp, fn, support = TpFpFnSupport(cls_id)
+            precision, recall, f1 = DetectionMetrics.precision_recall_f1(tp=tp, fp=fp, fn=fn)
+            metrics[cls_id] = { 'precision': precision, 'recall': recall, 'f1': f1, 'support': support }
+            total_tp, total_fp, total_fn, total_support = update_total_tp_fp_fn_support(total_tp, total_fp, total_fn, total_support, tp, fp, fn, support)
 
-        metrics['global'] = {
-            'precision': global_precision,
-            'recall': global_recall,
-            'f1': global_f1,
-            'support': total_support,
-        }
-
-        if (self.gt_coco is not None or self.predictions_coco is not  None):
-            global_map, global_map50, global_map75 = self._compute_map(
-                self.gt_coco, 
-                self.predictions_coco)
-            metrics['global']['mAP50'] = global_map50
-            metrics['global']['mAP75'] = global_map75
-            metrics['global']['mAP'] = global_map     
+        global_precision, global_recall, global_f1 = DetectionMetrics.precision_recall_f1(tp=total_tp, fp=total_fp, fn=total_fn)
+        metrics['global'] = { 'precision': global_precision, 'recall': global_recall, 'f1': global_f1, 'support': total_support }
+        metrics = compute_mAP_If_Possible(metrics)
         return metrics
 
     def _compute_map(self, gt_coco: COCO, predictions_coco: COCO) -> dict:

@@ -1,0 +1,6 @@
+[
+  {"image_id": 0, "category_id": 0, "bbox": [50, 50, 100, 100], "score": 0.95}, 
+  {"image_id": 0, "category_id": 1, "bbox": [300, 100, 100, 100], "score": 0.90}, 
+  {"image_id": 0, "category_id": 2, "bbox": [100, 300, 100, 100], "score": 0.85},
+  {"image_id": 0, "category_id": 1, "bbox": [600, 100, 100, 100], "score": 0.80} 
+]
