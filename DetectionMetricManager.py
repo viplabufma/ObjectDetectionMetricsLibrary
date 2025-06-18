@@ -5,10 +5,11 @@ GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 '''
 
 from pycocotools.coco import COCO
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional
 from metrics import DetectionMetrics
 import contextlib
 import io
+import json
 
 class DetectionMetricsManager:
     """
@@ -121,7 +122,14 @@ class DetectionMetricsManager:
         for img_id in img_ids:
             gt_anns, pred_anns = self.get_annotations(img_id)
             metrics_calculator.process_image(gt_anns, pred_anns)
-
+    
+    @staticmethod
+    def export_metrics(metrics: dict, path: str = '.' , format: str ='json'):
+        with open(f"{path}/metrics.{format}", 'w') as f:
+            if format == 'json':
+                json.dump(metrics, f, indent=4)
+            else:
+                raise ValueError("Unsupported format. Use 'json'.")
 def print_metrics(metrics: dict, class_names: dict) -> None:
     """
     Print object detection metrics in an organized, readable format.
@@ -141,7 +149,7 @@ def print_metrics(metrics: dict, class_names: dict) -> None:
         if isinstance(value, float):
             return f"{value:.4f}" if is_percentage else f"{value:.2f}"
         return str(value)
-    
+            
     # Helper function to print metric sections
     def print_section(title, data, is_class=False):
         print(f"\n{'=' * HEADER_WIDTH}")
