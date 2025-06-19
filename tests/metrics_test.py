@@ -5,7 +5,7 @@
 """
 
 import numpy as np
-from metrics import DetectionMetrics
+from metrics import DetectionMetrics, bbox_iou
 
 def test_multi_image_processing():
     """Tests cumulative processing of multiple images with different scenarios.
@@ -234,18 +234,17 @@ def test_bbox_iou_calculation():
     - Non-overlapping boxes (IoU=0.0)
     - Partially overlapping boxes (0.0 < IoU < 1.0)
     """
-    metrics = DetectionMetrics(names={1: 'test'})
-    
+  
     # Identical boxes
-    iou1 = metrics.bbox_iou([10, 10, 20, 20], [10, 10, 20, 20])
+    iou1 = bbox_iou([10, 10, 20, 20], [10, 10, 20, 20])
     assert iou1 == 1.0
     
     # Disjoint boxes
-    iou2 = metrics.bbox_iou([10, 10, 20, 20], [50, 50, 20, 20])
+    iou2 = bbox_iou([10, 10, 20, 20], [50, 50, 20, 20])
     assert iou2 == 0.0
     
     # Partial overlap
-    iou3 = metrics.bbox_iou([10, 10, 20, 20], [20, 20, 20, 20])
+    iou3 = bbox_iou([10, 10, 20, 20], [20, 20, 20, 20])
     assert iou3 > 0.0 and iou3 < 1.0
 
 def test_results_dict_property():

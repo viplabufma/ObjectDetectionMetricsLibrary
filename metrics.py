@@ -16,6 +16,70 @@ from pycocotools.cocoeval import COCOeval
 import contextlib
 import io
 
+def bbox_iou(box1: list, box2: list) -> float:
+    """
+    Calculate IoU between two COCO-format bounding boxes.
+
+    Args:
+        box1 (list[float]): [x, y, width, height]
+        box2 (list[float]): [x, y, width, height]
+
+    Returns:
+        float: Intersection-over-Union value between 0.0 and 1.0.
+    """
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    # Coordinates of box corners
+    x1_max, y1_max = x1 + w1, y1 + h1
+    x2_max, y2_max = x2 + w2, y2 + h2
+    # Intersection box
+    ix1, iy1 = max(x1, x2), max(y1, y2)
+    ix2, iy2 = min(x1_max, x2_max), min(y1_max, y2_max)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    union = w1*h1 + w2*h2 - inter
+    return inter/union if union>0 else 0.0
+
+def compute_iou_matrix(gt_anns: list, pred_anns: list) -> np.ndarray:
+    """
+    Build pairwise IoU matrix between ground truths and predictions.
+
+    Returns:
+        np.ndarray: IoU values of shape (num_gt, num_pred).
+    """
+    iou_mat = np.zeros((len(gt_anns), len(pred_anns)))
+    for i, g in enumerate(gt_anns):
+        for j, p in enumerate(pred_anns):
+            iou_mat[i, j] = bbox_iou(g['bbox'], p['bbox'])
+    return iou_mat
+
+def precision(tp: int, fp: int) -> float:
+    """
+    Compute precision: TP / (TP + FP).
+    """
+    return tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+def recall(tp: int, fn: int) -> float:
+    """
+    Compute recall: TP / (TP + FN).
+    """
+    return tp / (tp + fn) if (tp + fn) > 0 else 0.0
+
+def f1(precision: float, recall: float) -> float:
+    """
+    Compute F1 score: 2 * precision * recall / (precision + recall).
+    """
+    return 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple:
+    """
+    Convenience method to return (precision, recall, F1) together.
+    """
+    p = precision(tp, fp)
+    r = recall(tp, fn)
+    return p, r, f1(p, r)
+    
 class DetectionMetrics:
     """
     Computes comprehensive object detection evaluation metrics including:
@@ -176,19 +240,6 @@ class DetectionMetrics:
                 })
         self.image_counter += 1
 
-    def _compute_iou_matrix(self, gt_anns: list, pred_anns: list) -> np.ndarray:
-        """
-        Build pairwise IoU matrix between ground truths and predictions.
-
-        Returns:
-            np.ndarray: IoU values of shape (num_gt, num_pred).
-        """
-        iou_mat = np.zeros((len(gt_anns), len(pred_anns)))
-        for i, g in enumerate(gt_anns):
-            for j, p in enumerate(pred_anns):
-                iou_mat[i, j] = self.bbox_iou(g['bbox'], p['bbox'])
-        return iou_mat
-
     def _compute_detection_confusion(
         self,
         gt_anns: list,
@@ -221,7 +272,7 @@ class DetectionMetrics:
         if self._handle_detection_edge_cases(gt_anns, preds, confusion):
             return confusion
 
-        iou_mat = self._compute_iou_matrix(gt_anns, preds)
+        iou_mat = compute_iou_matrix(gt_anns, preds)
         gt_matched, pred_matched, confusion = self._match_detections_by_class(
             gt_anns, preds, iou_mat, self.iou_thr, confusion
         )
@@ -287,7 +338,7 @@ class DetectionMetrics:
         confusion = np.zeros((size,size), dtype=int)
         if self._handle_detection_edge_cases(gt_anns, preds, confusion):
             return confusion
-        iou_mat = self._compute_iou_matrix(gt_anns, preds)
+        iou_mat = compute_iou_matrix(gt_anns, preds)
         gt_mat, pred_mat, confusion = self.match_detection_global(
             gt_anns, preds, iou_mat, self.iou_thr, confusion
         )
@@ -295,31 +346,6 @@ class DetectionMetrics:
         self._handle_unmatched_preds(preds, pred_mat, confusion)
         return confusion
 
-    @staticmethod
-    def bbox_iou(box1: list, box2: list) -> float:
-        """
-        Calculate IoU between two COCO-format bounding boxes.
-
-        Args:
-            box1 (list[float]): [x, y, width, height]
-            box2 (list[float]): [x, y, width, height]
-
-        Returns:
-            float: Intersection-over-Union value between 0.0 and 1.0.
-        """
-        x1, y1, w1, h1 = box1
-        x2, y2, w2, h2 = box2
-        # Coordinates of box corners
-        x1_max, y1_max = x1 + w1, y1 + h1
-        x2_max, y2_max = x2 + w2, y2 + h2
-        # Intersection box
-        ix1, iy1 = max(x1, x2), max(y1, y2)
-        ix2, iy2 = min(x1_max, x2_max), min(y1_max, y2_max)
-        iw = max(0.0, ix2 - ix1)
-        ih = max(0.0, iy2 - iy1)
-        inter = iw * ih
-        union = w1*h1 + w2*h2 - inter
-        return inter/union if union>0 else 0.0
 
     def _handle_detection_edge_cases(
         self,
@@ -467,36 +493,6 @@ class DetectionMetrics:
             self.stats[cid]['fp'] += int(fp)
             self.stats[cid]['fn'] += int(fn)
 
-    @staticmethod
-    def precision(tp: int, fp: int) -> float:
-        """
-        Compute precision: TP / (TP + FP).
-        """
-        return tp / (tp + fp) if (tp + fp) > 0 else 0.0
-
-    @staticmethod
-    def recall(tp: int, fn: int) -> float:
-        """
-        Compute recall: TP / (TP + FN).
-        """
-        return tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-    @staticmethod
-    def f1(precision: float, recall: float) -> float:
-        """
-        Compute F1 score: 2 * precision * recall / (precision + recall).
-        """
-        return 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-
-    @staticmethod
-    def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple:
-        """
-        Convenience method to return (precision, recall, F1) together.
-        """
-        p = DetectionMetrics.precision(tp, fp)
-        r = DetectionMetrics.recall(tp, fn)
-        return p, r, DetectionMetrics.f1(p, r)
-
     def compute_metrics(self) -> dict:
         """
         Calculate final evaluation metrics for all processed images.
@@ -519,13 +515,13 @@ class DetectionMetrics:
             fp = self.stats[cid]['fp']
             fn = self.stats[cid]['fn']
             sup = self.stats[cid]['support']
-            p, r, f = DetectionMetrics.precision_recall_f1(tp, fp, fn)
+            p, r, f = precision_recall_f1(tp, fp, fn)
             metrics[cid] = {'precision': p, 'recall': r, 'f1': f,
                             'support': sup, 'tp': tp, 'fp': fp, 'fn': fn}
             total_tp += tp; total_fp += fp; total_fn += fn; total_support += sup
 
         # Global metrics
-        gp, gr, gf = DetectionMetrics.precision_recall_f1(
+        gp, gr, gf = precision_recall_f1(
             total_tp, total_fp, total_fn)
         metrics['global'] = {'precision': gp, 'recall': gr, 'f1': gf,
                              'support': total_support, 'tp': total_tp,
