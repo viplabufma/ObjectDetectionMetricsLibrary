@@ -574,3 +574,74 @@ def test_classification_errors_in_confusion_matrix():
     expected_f1 = 2 * (1/3) * 0.5 / ((1/3) + 0.5)
     assert abs(global_metrics['f1'] - expected_f1) < 1e-6
     assert global_metrics['support'] == 2
+
+def test_iscrowd_handling():
+    """
+    Tests correct handling of 'iscrowd' annotations according to COCO evaluation rules.
+    
+    Verifies:
+    - Crowd annotations (iscrowd=1) are excluded from matching and do not contribute to false negatives.
+    - Predictions matching crowd regions are not penalized as false positives.
+    - Normal annotations (iscrowd=0) are evaluated normally.
+    
+    Scenario:
+      Image contains:
+        - 1 normal ground truth (class1, bbox1)
+        - 1 crowd ground truth (class2, bbox2)
+        - Predictions:
+            1. Correct match for normal GT (class1, bbox1) - should be TP
+            2. Detection matching crowd region (class2, bbox2) - should be ignored
+            3. Detection with no match (class3) - should be FP
+    """
+    # Ground truths
+    gt_anns = [
+        {'category_id': 1, 'bbox': [10, 10, 20, 20], 'iscrowd': 0},  # Normal object
+        {'category_id': 2, 'bbox': [50, 50, 20, 20], 'iscrowd': 1}   # Crowd region
+    ]
+    
+    # Predictions
+    pred_anns = [
+        # TP: Correct match for normal GT (IoU > threshold)
+        {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},
+        
+        # Should be ignored: Matches crowd region (same class)
+        {'category_id': 2, 'bbox': [52, 52, 18, 18], 'score': 0.8},
+        
+        # FP: No matching GT
+        {'category_id': 3, 'bbox': [100, 100, 30, 30], 'score': 0.7}
+    ]
+    
+    metrics = DetectionMetrics(
+        names={1: 'class1', 2: 'class2', 3: 'class3'},
+        iou_thr=0.5,
+        conf_thr=0.5
+    )
+    metrics.process_image(gt_anns, pred_anns)
+    results = metrics.compute_metrics()
+    
+    # Validate metrics
+    assert results[1]['tp'] == 1, "Class1 should have 1 TP"
+    assert results[1]['fp'] == 0, "Class1 should have 0 FP"
+    assert results[1]['fn'] == 0, "Class1 should have 0 FN"
+    assert results[1]['support'] == 1, "Class1 support should be 1"
+    
+    assert results[2]['tp'] == 0, "Class2 should have 0 TP (crowd ignored)"
+    assert results[2]['fp'] == 0, "Class2 should have 0 FP (crowd match ignored)"
+    assert results[2]['fn'] == 0, "Class2 should have 0 FN (crowd not counted)"
+    assert results[2]['support'] == 0, "Class2 support should be 0 (crowd excluded)"
+    
+    assert results[3]['tp'] == 0, "Class3 should have 0 TP"
+    assert results[3]['fp'] == 1, "Class3 should have 1 FP"
+    assert results[3]['fn'] == 0, "Class3 should have 0 FN"
+    assert results[3]['support'] == 0, "Class3 support should be 0"
+    
+    # Verify confusion matrix
+    # Expected: {1:0, 2:1, 3:2}, background_idx=3
+    expected_matrix = np.array([
+        [1, 0, 0, 0],  # class1: 1 TP
+        [0, 0, 0, 0],  # class2: no entries
+        [0, 0, 0, 0],  # class3: no FNs (since no GTs)
+        [0, 0, 1, 0]   # background row: FP for class3 (column 2)
+    ])
+    assert np.array_equal(metrics.matrix, expected_matrix), \
+        "Confusion matrix mismatch"

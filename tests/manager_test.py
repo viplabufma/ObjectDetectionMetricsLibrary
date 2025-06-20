@@ -3,7 +3,7 @@ Author: Matheus Levy
 Organization: Viplab - UFMA
 GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 '''
-from DetectionMetricManager import DetectionMetricsManager
+from DetectionMetricManager import DetectionMetricsManager, export_metrics, save_confusion_matrix
 import numpy as np
 import json
 
@@ -13,6 +13,7 @@ def test_precision_simple():
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
     manager.load_data()
     metrics = manager.calculate_metrics()
+    save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=True)
     assert metrics[0]['precision'] == np.float64(0.6666666666666666)
     assert metrics[0]['recall'] == np.float64(0.6666666666666666)
     assert metrics[0]['f1'] == np.float64(0.6666666666666666)
@@ -57,13 +58,13 @@ def test_expor_json():
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
     manager.load_data()
     metrics = manager.calculate_metrics()
-    DetectionMetricsManager.export_metrics(metrics)
+    export_metrics(metrics, manager.labels)
     with open('metrics.json', 'r') as f:
         data = json.load(f)
-    assert data['0']['precision'] == 0.6666666666666666
-    assert data['0']['recall'] == 0.6666666666666666
-    assert data['0']['f1'] == 0.6666666666666666
-    assert data['0']['support'] == 3
+    assert data['person']['precision'] == 0.6666666666666666
+    assert data['person']['recall'] == 0.6666666666666666
+    assert data['person']['f1'] == 0.6666666666666666
+    assert data['person']['support'] == 3
     assert data['global']['precision'] == 0.6666666666666666
     assert data['global']['recall'] == 0.6666666666666666
     assert data['global']['f1'] == 0.6666666666666666

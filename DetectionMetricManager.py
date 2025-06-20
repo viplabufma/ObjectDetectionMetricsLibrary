@@ -10,6 +10,8 @@ from metrics import DetectionMetrics
 import contextlib
 import io
 import json
+import seaborn as sns;
+import matplotlib.pyplot as plt
 
 class DetectionMetricsManager:
     """
@@ -25,7 +27,8 @@ class DetectionMetricsManager:
     
     def __init__(self, gt_path: str, result_path: str):
         self._initialize(gt_path, result_path)
-    
+        self.labels = []
+
     def _initialize(self, gt_path: str, result_path: str):
         """Initialize paths and empty data containers"""
         self.gt_path = gt_path
@@ -112,9 +115,9 @@ class DetectionMetricsManager:
             predictions_coco=self.dt_coco,
             exclude_classes=exclude_class
         )
-        
         self._process_all_images(metrics_calculator)
-        return metrics_calculator.compute_metrics()
+        self.labels = metrics_calculator.get_confusion_matrix_labels()
+        return {'confusion_matrix': metrics_calculator.matrix.tolist(), 'confusion_matrix_multiclass': metrics_calculator.multiclass_matrix.tolist(), **metrics_calculator.compute_metrics()}
     
     def _process_all_images(self, metrics_calculator: DetectionMetrics) -> None:
         """Process all images through the metrics calculator"""
@@ -122,14 +125,89 @@ class DetectionMetricsManager:
         for img_id in img_ids:
             gt_anns, pred_anns = self.get_annotations(img_id)
             metrics_calculator.process_image(gt_anns, pred_anns)
+
+def save_confusion_matrix(
+    matrix: list[list[float]], 
+    class_names: list[str], 
+    path: str = 'confusion_matrix.png',
+    background_class=False
+) -> None:
+    """
+    Salva uma matriz de confusão com nomes de classes personalizados.
     
-    @staticmethod
-    def export_metrics(metrics: dict, path: str = '.' , format: str ='json'):
-        with open(f"{path}/metrics.{format}", 'w') as f:
-            if format == 'json':
-                json.dump(metrics, f, indent=4)
-            else:
-                raise ValueError("Unsupported format. Use 'json'.")
+    Args:
+        matrix: Matriz de confusão (lista de listas)
+        class_names: Lista com nomes das classes na ordem correta
+        path: Caminho para salvar a imagem
+    """
+    if not background_class: class_names.append("background")
+    plt.figure(figsize=(10, 8))
+    ax = sns.heatmap(
+        matrix,
+        annot=True,
+        annot_kws={"size": 12},
+        fmt='g',
+        cbar=False,
+        cmap="viridis",
+        xticklabels=class_names,
+        yticklabels=class_names
+    )
+    
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title('Confusion Matrix')
+    plt.tight_layout()
+    plt.savefig(path, bbox_inches='tight')
+    plt.close()
+
+import json
+
+def map_class_keys(metrics: dict, class_names: list) -> dict:
+    """
+    Mapeia chaves numéricas (IDs de classe) para nomes de classes em um dicionário de métricas.
+    
+    Args:
+        metrics: Dicionário de métricas com chaves numéricas para classes
+        class_names: Lista de nomes de classes na ordem dos IDs
+        
+    Returns:
+        Dicionário com chaves numéricas substituídas por nomes de classes
+    """
+    mapped_metrics = {}
+    class_id_to_name = {i: name for i, name in enumerate(class_names)}
+    
+    for key, value in metrics.items():
+        # Substitui chaves numéricas por nomes de classes
+        if isinstance(key, int) and key in class_id_to_name:
+            new_key = class_id_to_name[key]
+            mapped_metrics[new_key] = value
+        # Mantém chaves não numéricas (global, confusion_matrix, etc)
+        else:
+            mapped_metrics[key] = value
+            
+    return mapped_metrics
+
+def export_metrics(metrics: dict, class_names: list, path: str = '.', format: str = 'json'):
+    """
+    Exporta métricas com nomes de classes para um arquivo.
+    
+    Args:
+        metrics: Dicionário de métricas original
+        class_names: Lista de nomes de classes na ordem dos IDs
+        path: Diretório de saída
+        format: Formato do arquivo (apenas 'json' suportado)
+    """
+    # Mapeia IDs numéricos para nomes de classes
+    mapped_metrics = map_class_keys(metrics, class_names)
+    
+    with open(f"{path}/metrics.{format}", 'w') as f:
+        if format == 'json':
+            json.dump(mapped_metrics, f, indent=4)
+        else:
+            raise ValueError("Unsupported format. Use 'json'.")
+        
 def print_metrics(metrics: dict, class_names: dict) -> None:
     """
     Print object detection metrics in an organized, readable format.
