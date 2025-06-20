@@ -12,6 +12,7 @@ import io
 import json
 import seaborn as sns;
 import matplotlib.pyplot as plt
+import json
 
 class DetectionMetricsManager:
     """
@@ -117,7 +118,8 @@ class DetectionMetricsManager:
         )
         self._process_all_images(metrics_calculator)
         self.labels = metrics_calculator.get_confusion_matrix_labels()
-        return {'confusion_matrix': metrics_calculator.matrix.tolist(), 'confusion_matrix_multiclass': metrics_calculator.multiclass_matrix.tolist(), **metrics_calculator.compute_metrics()}
+        metrics = metrics_calculator.compute_metrics()
+        return {'confusion_matrix': metrics_calculator.matrix.tolist(), 'confusion_matrix_multiclass': metrics_calculator.multiclass_matrix.tolist(), **replace_keys_with_classes(metrics, self.labels)}
     
     def _process_all_images(self, metrics_calculator: DetectionMetrics) -> None:
         """Process all images through the metrics calculator"""
@@ -162,8 +164,6 @@ def save_confusion_matrix(
     plt.savefig(path, bbox_inches='tight')
     plt.close()
 
-import json
-
 def map_class_keys(metrics: dict, class_names: list) -> dict:
     """
     Mapeia chaves numéricas (IDs de classe) para nomes de classes em um dicionário de métricas.
@@ -207,88 +207,54 @@ def export_metrics(metrics: dict, class_names: list, path: str = '.', format: st
             json.dump(mapped_metrics, f, indent=4)
         else:
             raise ValueError("Unsupported format. Use 'json'.")
-        
-def print_metrics(metrics: dict, class_names: dict) -> None:
+
+def replace_keys_with_classes(metrics_dict, class_list):
     """
-    Print object detection metrics in an organized, readable format.
+    Replaces numeric keys in a metrics dictionary with corresponding class names.
+    
+    This function processes dictionary keys that represent class indices (as integers 
+    or numeric strings) and replaces them with the corresponding class name from 
+    the provided class list. Non-numeric keys are preserved unchanged.
     
     Args:
-        metrics: Metrics dictionary returned by DetectionMetrics.compute_metrics()
-        class_names: Mapping of category_id to class name
-    """
-    # Formatting constants
-    HEADER_WIDTH = 80
-    METRIC_WIDTH = 20
+        metrics_dict (dict): Input dictionary containing metric data. Keys may be:
+            - Integers representing class indices
+            - Numeric strings representing class indices
+            - Non-numeric keys (e.g., 'global') to be preserved
+        class_list (list): List of class names where index corresponds to class ID
     
-    # Helper function to format metric values
-    def format_metric(value, is_percentage=True):
-        if value is None:
-            return "N/A"
-        if isinstance(value, float):
-            return f"{value:.4f}" if is_percentage else f"{value:.2f}"
-        return str(value)
-            
-    # Helper function to print metric sections
-    def print_section(title, data, is_class=False):
-        print(f"\n{'=' * HEADER_WIDTH}")
-        print(f"{title.upper():^{HEADER_WIDTH}}")
-        print('=' * HEADER_WIDTH)
+    Returns:
+        dict: New dictionary with numeric keys replaced by class names where applicable
         
-        if is_class:
-            # Class metrics header
-            print(f"{'Class':<25} | {'Precision':<{METRIC_WIDTH}} | {'Recall':<{METRIC_WIDTH}} | "
-                  f"{'F1-Score':<{METRIC_WIDTH}} | {'Support':<{METRIC_WIDTH}}")
-            print('-' * HEADER_WIDTH)
-            
-            # Print metrics for each class
-            for cls_id, cls_data in data.items():
-                if cls_id == 'global':
-                    continue
-                    
-                cls_name = class_names.get(cls_id, f'Class_{cls_id}')
-                print(f"{cls_name:<25} | "
-                      f"{format_metric(cls_data.get('precision')):<{METRIC_WIDTH}} | "
-                      f"{format_metric(cls_data.get('recall')):<{METRIC_WIDTH}} | "
-                      f"{format_metric(cls_data.get('f1')):<{METRIC_WIDTH}} | "
-                      f"{format_metric(cls_data.get('support'), False):<{METRIC_WIDTH}}")
-        else:
-            # Global metrics header
-            global_data = data.get('global', {})
-            print(f"{'METRIC':<30} | {'VALUE'}")
-            print('-' * HEADER_WIDTH)
-            
-            # Print basic metrics
-            for metric in ['precision', 'recall', 'f1', 'support']:
-                if metric in global_data:
-                    print(f"{metric.capitalize():<30} | {format_metric(global_data[metric])}")
-            
-            # Print mAP metrics if available
-            map_metrics = {
-                'mAP@0.5:0.95': global_data.get('mAP'),
-                'mAP@0.5': global_data.get('mAP50'),
-                'mAP@0.75': global_data.get('mAP75')
+    Example:
+        >>> metrics_dict = {
+                0: {'precision': 0.666,...},
+                'global': {'precision': 0.666,...}
             }
+        >>> class_list = ['person', 'background']
+        >>> replace_keys_with_classes(metrics_dict, class_list)
+        {
+            'person': {'precision': 0.666,...},
+            'global': {'precision': 0.666,...}
+        }
+    """
+    new_dict = {}
+    for key, value in metrics_dict.items():
+        # Attempt to process numeric keys (both integers and string representations)
+        try:
+            # Convert key to integer (works for both int and numeric strings)
+            index = int(key)
             
-            for metric, value in map_metrics.items():
-                if value is not None:
-                    print(f"{metric:<30} | {format_metric(value)}")
-    
-    # Print global metrics section
-    print_section("Global Metrics", metrics)
-    
-    # Print per-class metrics section if available
-    if any(cls_id != 'global' for cls_id in metrics.keys()):
-        print_section("Per-Class Metrics", metrics, is_class=True)
-    
-    # Print final summary
-    global_data = metrics.get('global', {})
-    if 'mAP' in global_data:
-        print(f"\n{' SUMMARY ':=^{HEADER_WIDTH}}")
-        print(f"→ mAP@0.5:0.95: {format_metric(global_data['mAP'])}")
-        print(f"→ mAP@0.5:      {format_metric(global_data.get('mAP50'))}")
-        print(f"→ mAP@0.75:     {format_metric(global_data.get('mAP75'))}")
-        print(f"→ Precision:    {format_metric(global_data.get('precision'))}")
-        print(f"→ Recall:       {format_metric(global_data.get('recall'))}")
-        print(f"→ F1-Score:     {format_metric(global_data.get('f1'))}")
-        print(f"→ Support:      {format_metric(global_data.get('support'), False)}")
-        print('=' * HEADER_WIDTH)
+            # Check if index is within valid range of class_list
+            if 0 <= index < len(class_list):
+                # Replace with corresponding class name
+                new_dict[class_list[index]] = value
+            else:
+                # Keep original key if index is out of range
+                new_dict[key] = value
+                
+        except (ValueError, TypeError):
+            # Keep non-numeric keys unchanged (e.g., 'global')
+            new_dict[key] = value
+            
+    return new_dict

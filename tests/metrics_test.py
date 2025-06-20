@@ -47,10 +47,14 @@ def test_multi_image_processing():
     metrics_result = metrics.compute_metrics()
     assert metrics_result[1]['precision'] == 1.0
     assert metrics_result[1]['recall'] == 1.0
+    assert metrics_result[1]['iou'] == 0.8100000023841858
     assert metrics_result[2]['precision'] == 1.0
     assert metrics_result[2]['recall'] == 1.0
+    assert metrics_result[2]['iou'] == 0.8100000023841858
     assert metrics_result[3]['precision'] == 0.0  # 0 TP, 1 FP
     assert metrics_result[3]['recall'] == 0.0     # 0 FN (no GT for class3)
+    assert metrics_result[3]['iou'] == 0.0
+    assert metrics_result['global']['mIoU'] == 0.5400000214576721
 
 def test_single_image_basic():
     """Basic test with single image and perfect detections.
@@ -77,8 +81,11 @@ def test_single_image_basic():
     # All classes should have maximum precision and recall
     assert result[1]['precision'] == 1.0
     assert result[1]['recall'] == 1.0
+    assert result[1]['iou'] == 0.8100000023841858
     assert result[2]['precision'] == 1.0
     assert result[2]['recall'] == 1.0
+    assert result[2]['iou'] == 0.8711110949516296
+    assert result['global']['mIoU'] == 0.8405554890632629
 
 def test_no_predictions():
     """Tests scenario with no predictions (model fails to detect any objects).
@@ -106,6 +113,7 @@ def test_no_predictions():
     assert result[2]['recall'] == 0.0
     assert result[1]['support'] == 1  # 1 GT present
     assert result[2]['support'] == 1
+    assert result['global']['mIoU'] == 0.0
 
 def test_no_ground_truth():
     """Tests scenario with no annotations (predictions should be considered FP).
@@ -133,6 +141,7 @@ def test_no_ground_truth():
     assert result[2]['recall'] == 0.0
     assert result[1]['support'] == 0  # No GT for class
     assert result[2]['support'] == 0
+    assert result['global']['mIoU'] == 0.0
 
 def test_confidence_threshold():
     """Tests filtering by confidence threshold.
@@ -156,6 +165,7 @@ def test_confidence_threshold():
     # Only 1 valid prediction should be considered (TP)
     assert result[1]['precision'] == 1.0
     assert result[1]['recall'] == 1.0
+    assert result['global']['mIoU'] == 0.8100000023841858
 
 def test_iou_threshold():
     """Tests matching based on IoU threshold.
@@ -178,6 +188,7 @@ def test_iou_threshold():
     # Low IoU: FP (unmatched prediction) and FN (undetected GT)
     assert result[1]['precision'] == 0.0  # 0 TP, 1 FP
     assert result[1]['recall'] == 0.0     # 0 TP, 1 FN
+    assert result['global']['mIoU'] == 0.0
 
 def test_class_mismatch():
     """Tests predictions with incorrect class (classification error).
@@ -202,6 +213,7 @@ def test_class_mismatch():
     # Class 2: FP (incorrect prediction assigned to class)
     assert result[2]['precision'] == 0.0
     assert result[2]['recall'] == 0.0
+    assert result['global']['mIoU'] == 0.0
 
 def test_multiple_predictions_same_gt():
     """Tests multiple predictions for same GT (duplicate detections).
@@ -225,7 +237,8 @@ def test_multiple_predictions_same_gt():
     # 1 TP + 1 FP = precision 0.5, recall 1.0
     assert result[1]['precision'] == 0.5
     assert result[1]['recall'] == 1.0
-
+    assert result['global']['mIoU'] == 0.8100000023841858
+ 
 def test_bbox_iou_calculation():
     """Tests direct IoU calculation between bounding boxes.
     
@@ -392,18 +405,21 @@ def test_three_images_metrics():
     assert metrics_result[1]['recall'] == 1.0
     assert metrics_result[1]['f1'] == (2 * (2/3) * 1.0) / ((2/3) + 1.0)
     assert metrics_result[1]['support'] == 2
+    assert metrics_result[1]['iou'] == 0.8100000023841858
     
     # Class 2: 2 TP, 1 FP, 0 FN
     assert metrics_result[2]['precision'] == 2/3
     assert metrics_result[2]['recall'] == 1.0
     assert metrics_result[2]['f1'] == (2 * (2/3) * 1.0) / ((2/3) + 1.0)
     assert metrics_result[2]['support'] == 2
+    assert metrics_result[2]['iou'] == 0.8100000023841858
     
     # Class 3: 2 TP, 1 FP, 0 FN
     assert metrics_result[3]['precision'] == 2/3
     assert metrics_result[3]['recall'] == 1.0
     assert metrics_result[3]['f1'] == (2 * (2/3) * 1.0) / ((2/3) + 1.0)
     assert metrics_result[3]['support'] == 2
+    assert metrics_result[3]['iou'] == 0.8100000023841858
     
     # 3. Global metrics
     global_metrics = metrics_result['global']
@@ -412,6 +428,7 @@ def test_three_images_metrics():
     expected_f1 = 2 * (6/9 * 1.0) / (6/9 + 1.0)
     assert abs(global_metrics['f1'] - expected_f1) < 1e-6
     assert global_metrics['support'] == 6
+    assert global_metrics['mIoU'] == 0.8100000023841858
 
     # 4. Verify results dictionary
     results_dict = metrics.results_dict

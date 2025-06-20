@@ -198,6 +198,10 @@ class DetectionMetrics:
         self.gt_coco = gt_coco
         self.predictions_coco = predictions_coco
         self.exclude_classes = exclude_classes or []
+        self.per_class_iou_sum = defaultdict(float)
+        self.per_class_tp_count = defaultdict(int)
+        self.per_class_union = defaultdict(float)
+        self.per_class_intersection = defaultdict(float)
         self.reset()
 
     def reset(self) -> None:
@@ -215,6 +219,28 @@ class DetectionMetrics:
         self.all_preds = []
         self.all_gts = []
         self.image_counter = 0
+        self.per_class_iou_sum = defaultdict(float)
+        self.per_class_tp_count = defaultdict(int)
+        self.per_class_union = defaultdict(float)
+        self.per_class_intersection = defaultdict(float)
+    
+    def _update_iou_metrics(self, cid: int, iou: float, inter: float, gt_area: float, pred_area: float) -> None:
+        """
+        Update accumulated IoU metrics for a class.
+
+        Args:
+            cid (int): Class ID
+            iou (float): IoU value of the matched pair
+            inter (float): Intersection area of the matched pair
+            gt_area (float): Area of ground truth box
+            pred_area (float): Area of predicted box
+        """
+        union = gt_area + pred_area - inter
+        self.per_class_iou_sum[cid] += iou
+        self.per_class_tp_count[cid] += 1
+        self.per_class_intersection[cid] += inter
+        self.per_class_union[cid] += union
+
 
     def _initialize_global_mapping(self) -> None:
         """
@@ -367,12 +393,12 @@ class DetectionMetrics:
         return False
 
     def _perform_per_class_matching(
-            self,
-            gt_non_crowd: list,
-            preds: list,
-            iou_mat: np.ndarray,
-            confusion: np.ndarray
-        ) -> Tuple[List[bool], List[bool]]:
+        self,
+        gt_non_crowd: list,
+        preds: list,
+        iou_mat: np.ndarray,
+        confusion: np.ndarray
+    ) -> Tuple[List[bool], List[bool]]:
         """
         Match predictions to ground truths per class using IoU threshold.
 
@@ -418,7 +444,19 @@ class DetectionMetrics:
                     idx = self.class_map[cid]
                     confusion[idx, idx] += 1
                     unmatched_gt_list.pop(best_idx)
-
+                    
+                    # Calcular áreas e interseção
+                    # IoU = inter / (gt_area + pred_area - inter) => inter = (IoU * (gt_area + pred_area)) / (1 + IoU)
+                    gt_box = gt_non_crowd[best_gt_index]['bbox']
+                    pred_box = preds[j]['bbox']
+                    gt_area = gt_box[2] * gt_box[3]
+                    pred_area = pred_box[2] * pred_box[3]
+                    inter = best_iou * (gt_area + pred_area) / (1 + best_iou) if best_iou > 0 else 0.0
+                    
+                    # Update IoU metrics
+                    self._update_iou_metrics(
+                        cid, best_iou, inter, gt_area, pred_area
+                    )
         return gt_matched, pred_matched
 
     def _process_crowd_matches(
@@ -737,6 +775,30 @@ class DetectionMetrics:
             metrics['global']['mAP'] = float(gmap)
             metrics['global']['mAP50'] = float(gmap50)
             metrics['global']['mAP75'] = float(gmap75)
+
+        class_ious = []
+        for cid in self.class_map:
+            tp_count = self.per_class_tp_count.get(cid, 0)
+            iou_sum = self.per_class_iou_sum.get(cid, 0.0)
+            inter = self.per_class_intersection.get(cid, 0.0)
+            union = self.per_class_union.get(cid, 0.0)
+            
+            # Calculate average IoU for matched pairs
+            avg_iou = iou_sum / tp_count if tp_count > 0 else 0.0
+            
+            # Calculate aggregate IoU (total_intersection / total_union)
+            agg_iou = inter / union if union > 0 else 0.0
+            
+            metrics[cid].update({
+                'iou': float(avg_iou),
+                'agg_iou': float(agg_iou)
+            })
+            class_ious.append(agg_iou)  # Use aggregate IoU for mIoU calculation
+        
+        # Calculate mIoU (mean of per-class aggregate IoUs)
+        mIoU = sum(class_ious) / len(class_ious) if class_ious else 0.0
+        metrics['global']['mIoU'] = float(mIoU)
+        
         return metrics
 
     def _compute_map(self, gt_coco: COCO, predictions_coco: COCO) -> tuple:
