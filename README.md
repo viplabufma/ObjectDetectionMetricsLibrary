@@ -13,9 +13,6 @@ gt_path = "/path/to/gt_coco.json"
 pred_path = "/path/to/predictions_coco.json"
 manager = DetectionMetricsManager(gt_path=gt_path, result_path=pred_path)
 
-# Load data
-manager.load_data()
-
 # Calculate metrics
 metrics = manager.calculate_metrics()
 

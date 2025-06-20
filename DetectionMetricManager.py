@@ -37,13 +37,14 @@ class DetectionMetricsManager:
         self.gt_coco: Optional[COCO] = None
         self.dt_coco: Optional[COCO] = None
         self.names: Dict[int, str] = {}
+        self._load_data()
 
     def update_data(self, gt_path: str, result_path: str) -> None:
         """Update data sources and reload all data"""
         self._initialize(gt_path, result_path)
-        self.load_data()
+        self._load_data()
 
-    def load_data(self) -> None:
+    def _load_data(self) -> None:
         """Load and process ground truth and prediction JSON files"""
         # Suppress pycocotools output during loading
         with io.StringIO() as buf, contextlib.redirect_stdout(buf):

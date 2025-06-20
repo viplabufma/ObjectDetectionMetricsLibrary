@@ -11,7 +11,6 @@ def test_precision_simple():
     gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/gt_coco.json"
     predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
-    manager.load_data()
     metrics = manager.calculate_metrics()
     save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=True)
     assert metrics['person']['precision'] == np.float64(0.6666666666666666)
@@ -30,9 +29,7 @@ def test_precision_medium():
     gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/medium/gt_coco.json"
     predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/medium/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
-    manager.load_data()
     metrics = manager.calculate_metrics()
-    print(metrics)
     assert metrics['cat']['precision'] == np.float64(1.0)
     assert metrics['cat']['recall'] == np.float64(0.3333333333333333)
     assert metrics['cat']['f1'] == np.float64(0.5)
@@ -57,7 +54,6 @@ def test_expor_json():
     gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/gt_coco.json"
     predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
-    manager.load_data()
     metrics = manager.calculate_metrics()
     export_metrics(metrics, manager.labels)
     with open('metrics.json', 'r') as f:
