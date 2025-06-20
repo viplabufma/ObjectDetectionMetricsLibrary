@@ -417,7 +417,6 @@ class DetectionMetrics:
                     pred_matched[j] = True
                     idx = self.class_map[cid]
                     confusion[idx, idx] += 1
-                    # OTIMIZAÇÃO: Remover GT da lista
                     unmatched_gt_list.pop(best_idx)
 
         return gt_matched, pred_matched
