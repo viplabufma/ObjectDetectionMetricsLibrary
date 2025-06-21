@@ -1,18 +1,20 @@
-'''
+"""
 Author: Matheus Levy
 Organization: Viplab - UFMA
 GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
-'''
+"""
 
+import os
+import numpy as np
 from pycocotools.coco import COCO
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union, Any
 from metrics import DetectionMetrics
 import contextlib
 import io
 import json
-import seaborn as sns;
+import seaborn as sns
 import matplotlib.pyplot as plt
-import json
+
 
 class DetectionMetricsManager:
     """
@@ -24,13 +26,14 @@ class DetectionMetricsManager:
         gt_coco (COCO): COCO object containing ground truth data
         dt_coco (COCO): COCO object containing prediction data
         names (Dict[int, str]): Mapping of category_id to class name
+        labels (List[str]): Class labels including background
     """
     
     def __init__(self, gt_path: str, result_path: str):
         self._initialize(gt_path, result_path)
         self.labels = []
 
-    def _initialize(self, gt_path: str, result_path: str):
+    def _initialize(self, gt_path: str, result_path: str) -> None:
         """Initialize paths and empty data containers"""
         self.gt_path = gt_path
         self.result_path = result_path
@@ -97,7 +100,8 @@ class DetectionMetricsManager:
         self, 
         iou_thr: float = 0.5, 
         conf_thr: float = 0.5,
-        exclude_class: list = None) -> dict:
+        exclude_class: Optional[list] = None
+    ) -> dict:
         """
         Calculate detection metrics for the entire dataset.
         
@@ -115,12 +119,19 @@ class DetectionMetricsManager:
             conf_thr=conf_thr,
             gt_coco=self.gt_coco,
             predictions_coco=self.dt_coco,
-            exclude_classes=exclude_class
+            exclude_classes=exclude_class,
+            store_pr_data=True,
+            store_pr_curves=True
         )
         self._process_all_images(metrics_calculator)
         self.labels = metrics_calculator.get_confusion_matrix_labels()
         metrics = metrics_calculator.compute_metrics()
-        return {'confusion_matrix': metrics_calculator.matrix.tolist(), 'confusion_matrix_multiclass': metrics_calculator.multiclass_matrix.tolist(), **replace_keys_with_classes(metrics, self.labels)}
+        metrics = map_class_keys_recursive(metrics, self.labels)
+        return {
+            'confusion_matrix': metrics_calculator.matrix.tolist(),
+            'confusion_matrix_multiclass': metrics_calculator.multiclass_matrix.tolist(),
+            **metrics
+        }
     
     def _process_all_images(self, metrics_calculator: DetectionMetrics) -> None:
         """Process all images through the metrics calculator"""
@@ -129,21 +140,24 @@ class DetectionMetricsManager:
             gt_anns, pred_anns = self.get_annotations(img_id)
             metrics_calculator.process_image(gt_anns, pred_anns)
 
+
 def save_confusion_matrix(
-    matrix: list[list[float]], 
-    class_names: list[str], 
+    matrix: List[List[float]], 
+    class_names: List[str], 
     path: str = 'confusion_matrix.png',
-    background_class=False
+    background_class: bool = False
 ) -> None:
     """
-    Salva uma matriz de confusão com nomes de classes personalizados.
+    Save a confusion matrix with custom class names.
     
     Args:
-        matrix: Matriz de confusão (lista de listas)
-        class_names: Lista com nomes das classes na ordem correta
-        path: Caminho para salvar a imagem
+        matrix: Confusion matrix (list of lists)
+        class_names: List of class names in correct order
+        path: Path to save the image
+        background_class: Whether to include background class
     """
-    if not background_class: class_names.append("background")
+    if background_class:
+        class_names.append("background")
     plt.figure(figsize=(10, 8))
     ax = sns.heatmap(
         matrix,
@@ -165,97 +179,255 @@ def save_confusion_matrix(
     plt.savefig(path, bbox_inches='tight')
     plt.close()
 
-def map_class_keys(metrics: dict, class_names: list) -> dict:
-    """
-    Mapeia chaves numéricas (IDs de classe) para nomes de classes em um dicionário de métricas.
-    
-    Args:
-        metrics: Dicionário de métricas com chaves numéricas para classes
-        class_names: Lista de nomes de classes na ordem dos IDs
-        
-    Returns:
-        Dicionário com chaves numéricas substituídas por nomes de classes
-    """
-    mapped_metrics = {}
-    class_id_to_name = {i: name for i, name in enumerate(class_names)}
-    
-    for key, value in metrics.items():
-        # Substitui chaves numéricas por nomes de classes
-        if isinstance(key, int) and key in class_id_to_name:
-            new_key = class_id_to_name[key]
-            mapped_metrics[new_key] = value
-        # Mantém chaves não numéricas (global, confusion_matrix, etc)
-        else:
-            mapped_metrics[key] = value
-            
-    return mapped_metrics
 
-def export_metrics(metrics: dict, class_names: list, path: str = '.', format: str = 'json'):
+def map_class_keys_recursive(
+    obj: Union[dict, list, Any], 
+    class_list: List[str]
+) -> Union[dict, list, Any]:
     """
-    Exporta métricas com nomes de classes para um arquivo.
+    Recursively maps numeric keys to class names throughout all dictionary levels.
     
     Args:
-        metrics: Dicionário de métricas original
-        class_names: Lista de nomes de classes na ordem dos IDs
-        path: Diretório de saída
-        format: Formato do arquivo (apenas 'json' suportado)
-    """
-    # Mapeia IDs numéricos para nomes de classes
-    mapped_metrics = map_class_keys(metrics, class_names)
+        obj: Dictionary or object to process
+        class_list: List of class names
     
+    Returns:
+        Object with numeric keys replaced by class names
+    """
+    if class_list and class_list[-1] == 'background':
+        class_list = class_list[:-1]
+    
+    if isinstance(obj, dict):
+        # Process dictionaries
+        new_dict = {}
+        
+        # Separate numeric and non-numeric keys
+        numeric_keys = []
+        non_numeric_items = {}
+        
+        for key, value in obj.items():
+            try:
+                # Try to convert key to int
+                num_key = int(key)
+                numeric_keys.append((key, num_key, value))
+            except (ValueError, TypeError):
+                # Non-numeric key - process value recursively
+                non_numeric_items[key] = map_class_keys_recursive(value, class_list)
+        
+        # Sort numeric keys
+        numeric_keys.sort(key=lambda x: x[1])
+        
+        # Map numeric keys to class names
+        for idx, (orig_key, num_key, value) in enumerate(numeric_keys):
+            if idx < len(class_list):
+                new_key = class_list[idx]
+            else:
+                new_key = orig_key  # Keep original if no matching name
+            
+            new_dict[new_key] = map_class_keys_recursive(value, class_list)
+        
+        # Add non-numeric items
+        new_dict.update(non_numeric_items)
+        return new_dict
+    
+    elif isinstance(obj, list):
+        # Process lists
+        return [map_class_keys_recursive(item, class_list) for item in obj]
+    
+    else:
+        # Keep other types unchanged
+        return obj
+
+
+def export_metrics(
+    metrics: dict, 
+    path: str = '.', 
+    format: str = 'json'
+) -> None:
+    """
+    Export metrics dictionary to file in specified format.
+    
+    Args:
+        metrics: Metrics dictionary to export
+        path: Output directory path
+        format: File format ('json' supported)
+    """
+    # Convert NumPy objects to native types
+    metrics_converted = convert_numpy(metrics)
+    # Export to JSON
     with open(f"{path}/metrics.{format}", 'w') as f:
         if format == 'json':
-            json.dump(mapped_metrics, f, indent=4)
+            json.dump(metrics_converted, f, indent=4)
         else:
             raise ValueError("Unsupported format. Use 'json'.")
 
-def replace_keys_with_classes(metrics_dict, class_list):
+
+def replace_keys_with_classes(
+    metrics_dict: dict, 
+    class_list: List[str]
+) -> dict:
     """
     Replaces numeric keys in a metrics dictionary with corresponding class names.
-    
-    This function processes dictionary keys that represent class indices (as integers 
-    or numeric strings) and replaces them with the corresponding class name from 
-    the provided class list. Non-numeric keys are preserved unchanged.
+    Removes last class if it's 'background' before processing.
     
     Args:
-        metrics_dict (dict): Input dictionary containing metric data. Keys may be:
-            - Integers representing class indices
-            - Numeric strings representing class indices
-            - Non-numeric keys (e.g., 'global') to be preserved
-        class_list (list): List of class names where index corresponds to class ID
+        metrics_dict: Input dictionary with numeric/non-numeric keys
+        class_list: List of class names (last element removed if 'background')
     
     Returns:
-        dict: New dictionary with numeric keys replaced by class names where applicable
+        New dictionary with numeric keys replaced by class names
         
     Example:
-        >>> metrics_dict = {
-                0: {'precision': 0.666,...},
-                'global': {'precision': 0.666,...}
-            }
+        >>> metrics_dict = {'a': 100, '0': 200, '1': 300}
         >>> class_list = ['person', 'background']
         >>> replace_keys_with_classes(metrics_dict, class_list)
-        {
-            'person': {'precision': 0.666,...},
-            'global': {'precision': 0.666,...}
-        }
+        {'a': 100, 'person': 200}
     """
-    new_dict = {}
+    # Remove last element if it's 'background'
+    if class_list and class_list[-1] == 'background':
+        class_list = class_list[:-1]
+    
+    # Separate numeric and non-numeric keys
+    numeric_keys = []
+    non_numeric_items = {}
+    
     for key, value in metrics_dict.items():
-        # Attempt to process numeric keys (both integers and string representations)
         try:
-            # Convert key to integer (works for both int and numeric strings)
-            index = int(key)
-            
-            # Check if index is within valid range of class_list
-            if 0 <= index < len(class_list):
-                # Replace with corresponding class name
-                new_dict[class_list[index]] = value
-            else:
-                # Keep original key if index is out of range
-                new_dict[key] = value
-                
+            # Convert to int and add to numeric keys
+            numeric_keys.append((key, int(key)))
         except (ValueError, TypeError):
-            # Keep non-numeric keys unchanged (e.g., 'global')
-            new_dict[key] = value
+            # Non-numeric key - preserve as-is
+            non_numeric_items[key] = value
+    
+    # Sort numeric keys by their numeric value
+    numeric_keys.sort(key=lambda x: x[1])
+    sorted_numeric_keys = [orig_key for orig_key, _ in numeric_keys]
+    
+    # Build new dictionary
+    new_dict = {}
+    # Add non-numeric items first
+    new_dict.update(non_numeric_items)
+    # Add class-mapped items
+    for idx, orig_key in enumerate(sorted_numeric_keys):
+        if idx < len(class_list):
+            new_dict[class_list[idx]] = metrics_dict[orig_key]
+        else:
+            new_dict[orig_key] = metrics_dict[orig_key]
             
     return new_dict
+
+
+def convert_numpy(
+    obj: Any, 
+    convert_keys_to_str: bool = False
+) -> Any:
+    """
+    Convert NumPy objects to native Python types recursively.
+    
+    Args:
+        obj: Object to convert (any type)
+        convert_keys_to_str: Convert non-string keys to strings (useful for JSON)
+    
+    Returns:
+        Object converted to native Python types
+    """
+    # Handle arrays
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    
+    # Handle NumPy scalars
+    elif isinstance(obj, np.generic):
+        if isinstance(obj, (np.integer, np.unsignedinteger)):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.character):
+            return str(obj)
+        return obj.item()  # Fallback for other types
+    
+    # Handle dictionaries (keys and values)
+    elif isinstance(obj, dict):
+        new_dict = {}
+        for k, v in obj.items():
+            k = convert_numpy(k, convert_keys_to_str)
+            v = convert_numpy(v, convert_keys_to_str)
+            if convert_keys_to_str and not isinstance(k, str):
+                k = str(k)
+            new_dict[k] = v
+        return new_dict
+    
+    # Handle lists and tuples
+    elif isinstance(obj, list):
+        return [convert_numpy(item, convert_keys_to_str) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy(item, convert_keys_to_str) for item in obj)
+    
+    # Other types don't need conversion
+    return obj
+
+
+def plot_pr_curves(
+    pr_curves: Dict[Union[int, str], Dict[str, np.ndarray]], 
+    output_path: Optional[str] = None,
+    show: bool = True,
+    dpi: int = 100
+) -> Optional[plt.Figure]:
+    """
+    Plot Precision-Recall curves from precomputed PR curves data.
+    
+    Args:
+        pr_curves: Dictionary containing PR curves data
+        output_path: Path to save the plot image
+        show: Whether to display the plot
+        dpi: Image resolution for saved figure
+        
+    Returns:
+        plt.Figure if show=False, else None
+    """
+    if not pr_curves:
+        raise ValueError("PR curves dictionary is empty")
+    
+    plt.figure(figsize=(12, 8))
+    plt.title('Precision-Recall Curves')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.grid(True)
+    plt.xlim(0, 1.0)
+    plt.ylim(0, 1.05)
+    
+    # Plot global curve
+    global_data = pr_curves.get('global')
+    if global_data:
+        plt.plot(
+            global_data['recall'], 
+            global_data['precision'],
+            'k-', 
+            linewidth=3,
+            label=f'Global (AP={global_data["ap"]:.3f})'
+        )
+    
+    # Plot class curves
+    for class_id, curve_data in pr_curves.items():
+        if class_id == 'global':
+            continue
+            
+        plt.plot(
+            curve_data['recall'], 
+            curve_data['precision'],
+            label=f'{class_id} (AP={curve_data["ap"]:.3f})'
+        )
+    
+    plt.legend(loc='lower left', fontsize=10)
+    plt.tight_layout()
+    
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
+    
+    if show:
+        plt.show()
+        return None
+    else:
+        return plt.gcf()
