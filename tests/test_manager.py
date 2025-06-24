@@ -9,8 +9,8 @@ import json
 import pytest
 
 def test_precision_simple():
-    gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/gt_coco.json"
-    predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/simple/predictions_coco.json"
+    gt_json_path = "./tests/jsons/simple/gt_coco.json"
+    predictions_json_path = "./tests/jsons/simple/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
     metrics = manager.calculate_metrics()
     save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=True)
@@ -27,8 +27,8 @@ def test_precision_simple():
     assert metrics['global']['mAP'] == np.float64(0.16831683168316833)
 
 def test_precision_medium():
-    gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/medium/gt_coco.json"
-    predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/medium/predictions_coco.json"
+    gt_json_path = "./tests/jsons/medium/gt_coco.json"
+    predictions_json_path = "./tests/jsons/medium/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
     metrics = manager.calculate_metrics()
     assert metrics['cat']['precision'] == np.float64(1.0)
@@ -52,8 +52,8 @@ def test_precision_medium():
     assert metrics['global']['mAP'] == np.float64(0.33663366336633654)
 
 def test_export_json():
-    gt_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/real_case/_annotations.coco.json"
-    predictions_json_path = "/home/thebig/Documentos/MatheusLevy_mestrado/tests/jsons/real_case/tood_predicts_bbox.bbox.json"
+    gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
+    predictions_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
     metrics = manager.calculate_metrics(exclude_class=[0])
     export_metrics(metrics)
