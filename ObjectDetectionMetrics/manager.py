@@ -8,7 +8,7 @@ import os
 import numpy as np
 from pycocotools.coco import COCO
 from typing import Dict, List, Tuple, Optional, Union, Any
-from metrics import DetectionMetrics
+from .metrics import DetectionMetrics
 import contextlib
 import io
 import json

@@ -3,7 +3,7 @@ Author: Matheus Levy
 Organization: Viplab - UFMA
 GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 '''
-from DetectionMetricManager import DetectionMetricsManager, export_metrics, save_confusion_matrix, plot_pr_curves
+from ObjectDetectionMetrics.manager import DetectionMetricsManager, export_metrics, save_confusion_matrix, plot_pr_curves
 import numpy as np
 import json
 import pytest

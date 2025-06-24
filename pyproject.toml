@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ObjectDetectionMetrics"
+version = "0.1.0"
+authors = [
+    {name = "Matheus Levy", email = "matheus.levy@nca.ufma.br"},
+]
+description = "Package for calculating object detection metrics"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+keywords = ["object detection", "metrics", "coco", "precision", "recall", "map"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=2.0.1",
+    "matplotlib>=3.10.0",
+    "seaborn>=0.13.0",
+    "pycocotools>=2.0.10",
+]
+
+[project.urls]
+homepage = "https://github.com/viplabufma/ObjectDetectionMetricsLibrary"
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ObjectDetectionMetrics*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+"ObjectDetectionMetrics" = ["*.txt", "*.md", "*.json"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "*.pyo", "__pycache__"]
