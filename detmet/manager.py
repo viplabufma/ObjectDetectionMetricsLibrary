@@ -431,3 +431,10 @@ def plot_pr_curves(
         return None
     else:
         return plt.gcf()
+    
+def compute_metrics(groundtruth_json_path: str, prediction_json_path: str, iou_thr: float = 0.5 , conf_thr: float = 0.0, exclude_classes: list = None) -> None:
+    manager = DetectionMetricsManager(gt_path=groundtruth_json_path,result_path=prediction_json_path)
+    metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_class=exclude_classes)
+    save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=False)
+    export_metrics(metrics)
+    plot_pr_curves(metrics['pr_curves'], output_path='./pr.png', show= False)

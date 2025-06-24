@@ -3,17 +3,22 @@ Author: Matheus Levy
 Organization: Viplab - UFMA
 GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 '''
-from ObjectDetectionMetrics.manager import DetectionMetricsManager, export_metrics, save_confusion_matrix, plot_pr_curves
+from detmet import DetectionMetricsManager, export_metrics, save_confusion_matrix, plot_pr_curves, compute_metrics
 import numpy as np
 import json
 import pytest
+
+def test_compute_metrics():
+    gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
+    pred_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
+    compute_metrics(gt_json_path, pred_json_path, exclude_classes=[0])
 
 def test_precision_simple():
     gt_json_path = "./tests/jsons/simple/gt_coco.json"
     predictions_json_path = "./tests/jsons/simple/predictions_coco.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
     metrics = manager.calculate_metrics()
-    save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=True)
+    save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=False)
     assert metrics['person']['precision'] == np.float64(0.6666666666666666)
     assert metrics['person']['recall'] == np.float64(0.6666666666666666)
     assert metrics['person']['f1'] == np.float64(0.6666666666666666)

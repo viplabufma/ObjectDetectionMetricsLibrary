@@ -4,7 +4,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name="ObjectDetectionMetrics",
+    name="detmet",
     version="0.1.0",
     author="Matheus Levy",
     author_email="matheus.levy@nca.ufma.br",
@@ -12,7 +12,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/viplabufma/ObjectDetectionMetricsLibrary",
-    packages=find_packages(),
+    packages=find_packages(include=['detmet*']),
     install_requires=[
         "numpy>=2.0.1",
         "matplotlib>=3.10.0",

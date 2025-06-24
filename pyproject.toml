@@ -3,7 +3,7 @@ requires = ["setuptools>=64.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ObjectDetectionMetrics"
+name = "detmet"
 version = "0.1.0"
 authors = [
     {name = "Matheus Levy", email = "matheus.levy@nca.ufma.br"},
@@ -52,10 +52,10 @@ py-modules = []
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ObjectDetectionMetrics*"]
+include = ["detmet*"]
 
 [tool.setuptools.package-data]
-"ObjectDetectionMetrics" = ["*.txt", "*.md", "*.json"]
+"detmet" = ["*.txt", "*.md", "*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc", "*.pyo", "__pycache__", "*.gitignore"]

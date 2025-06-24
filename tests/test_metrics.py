@@ -5,7 +5,7 @@
 """
 
 import numpy as np
-from ObjectDetectionMetrics.metrics import DetectionMetrics, bbox_iou, compute_precision_recall_curve
+from detmet import DetectionMetrics, bbox_iou, compute_precision_recall_curve
 
 def test_multi_image_processing():
     """Tests cumulative processing of multiple images with different scenarios.
