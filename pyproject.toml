@@ -8,15 +8,22 @@ version = "0.1.0"
 authors = [
     {name = "Matheus Levy", email = "matheus.levy@nca.ufma.br"},
 ]
-description = "Package for calculating object detection metrics"
+description = "Comprehensive metrics calculator for object detection tasks"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.8"
 license = {text = "MIT"}
-keywords = ["object detection", "metrics", "coco", "precision", "recall", "map"]
+keywords = ["object detection", "metrics", "coco", "precision", "recall", "mAP"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Science/Research"
 ]
 dependencies = [
     "numpy>=2.0.1",
@@ -25,8 +32,23 @@ dependencies = [
     "pycocotools>=2.0.10",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.2.2",
+    "pytest-cov>=4.0",
+    "coverage>=7.0"
+]
+dev = [
+    "twine>=5.0.0",
+    "build>=1.2.0",
+    "ipython>=8.0.0"
+]
+
 [project.urls]
 homepage = "https://github.com/viplabufma/ObjectDetectionMetricsLibrary"
+documentation = "https://github.com/viplabufma/ObjectDetectionMetricsLibrary#readme"
+repository = "https://github.com/viplabufma/ObjectDetectionMetricsLibrary"
+issues = "https://github.com/viplabufma/ObjectDetectionMetricsLibrary/issues"
 
 [tool.setuptools]
 py-modules = []
@@ -34,10 +56,9 @@ py-modules = []
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ObjectDetectionMetrics*"]
-exclude = ["tests*", "docs*"]
 
 [tool.setuptools.package-data]
 "ObjectDetectionMetrics" = ["*.txt", "*.md", "*.json"]
 
 [tool.setuptools.exclude-package-data]
-"*" = ["*.pyc", "*.pyo", "__pycache__"]
+"*" = ["*.pyc", "*.pyo", "__pycache__", "*.gitignore"]
