@@ -20,9 +20,6 @@ setup(
         "pycocotools>=2.0.10",
     ],
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
@@ -31,7 +28,7 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Intended Audience :: Science/Research"
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     keywords="object detection metrics coco precision recall map",
     license="MIT",
     extras_require={
