@@ -17,7 +17,6 @@ from pycocotools.cocoeval import COCOeval
 import contextlib
 import io
 
-
 def bbox_iou(box1: list, box2: list) -> float:
     """
     Calculate Intersection over Union (IoU) between two COCO-format bounding boxes.
@@ -90,35 +89,36 @@ def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndar
     return inter_area / np.maximum(union_area, 1e-7)
 
 
-def compute_iou_matrix(gt_anns: list, pred_anns: list) -> np.ndarray:
+def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xyxy: bool = True) -> np.ndarray:
     """
     Compute IoU matrix between ground truth and predicted annotations.
 
     Args:
-        gt_anns (list): List of ground truth annotations
-        pred_anns (list): List of predicted annotations
+        gt_anns: List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2].
+        pred_anns: List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2].
+        convert_to_xyxy: If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
+            are already in [x1, y1, x2, y2].
 
     Returns:
-        np.ndarray: IoU matrix of shape (num_gt, num_pred)
+        np.ndarray: IoU matrix of shape (num_gt, num_pred).
+
+    Examples:
+        >>> gt = [{'bbox': [10, 10, 20, 20]}]
+        >>> pred = [{'bbox': [12, 12, 18, 18]}]
+        >>> iou_matrix = compute_iou_matrix(gt, pred)
     """
     if not gt_anns and not pred_anns:
         return np.zeros((0, 0))
 
-    # Convert to bbox arrays
     gt_boxes = np.array([g['bbox'] for g in gt_anns], dtype=np.float32)
-    if gt_boxes.size > 0:
-        # Convert [x,y,w,h] to [x1,y1,x2,y2]
+    pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
+
+    if convert_to_xyxy and gt_boxes.size > 0:
         gt_boxes[:, 2] += gt_boxes[:, 0]  # x2 = x + w
         gt_boxes[:, 3] += gt_boxes[:, 1]  # y2 = y + h
-    else:
-        gt_boxes = np.zeros((0, 4), dtype=np.float32)
-
-    pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
-    if pred_boxes.size > 0:
+    if convert_to_xyxy and pred_boxes.size > 0:
         pred_boxes[:, 2] += pred_boxes[:, 0]  # x2 = x + w
         pred_boxes[:, 3] += pred_boxes[:, 1]  # y2 = y + h
-    else:
-        pred_boxes = np.zeros((0, 4), dtype=np.float32)
 
     return vectorized_bbox_iou(gt_boxes, pred_boxes)
 
@@ -243,7 +243,7 @@ def compute_precision_recall_curve(
     })
 
     # Process predictions in descending confidence order
-    for pred_idx, pred in enumerate(flat_preds):
+    for _, pred in enumerate(flat_preds):
         class_id = pred['class_id']
         best_iou = 0.0
         best_gt_idx = -1
@@ -712,15 +712,28 @@ class DetectionMetrics:
         iou_mat_full: np.ndarray = None
     ) -> np.ndarray:
         """
-        Compute detection confusion matrix (TP/FP/FN).
+        Compute the detection confusion matrix (True Positives, False Positives, False Negatives).
+
+        This method calculates the confusion matrix for object detection by matching ground truth
+        annotations with predictions based on the IoU threshold. It handles edge cases such as
+        no predictions or no ground truths, and accounts for crowd annotations.
 
         Args:
-            gt_anns: Ground truth annotations
-            pred_anns: Prediction annotations
-            iou_mat_full: Precomputed IoU matrix
+            gt_anns: List of ground truth annotations, each containing 'category_id', 'bbox', and
+                optionally 'iscrowd'.
+            pred_anns: List of predicted annotations, each containing 'category_id', 'bbox', and 'score'.
+            iou_mat_full: Precomputed IoU matrix between ground truths and predictions. If None,
+                it will be computed internally.
 
         Returns:
-            Detection confusion matrix
+            np.ndarray: Confusion matrix of shape (n_classes + 1, n_classes + 1), where the last
+                row/column represents the background class.
+
+        Examples:
+            >>> metrics = DetectionMetrics(names={1: 'person'})
+            >>> gt = [{'category_id': 1, 'bbox': [10, 10, 20, 20]}]
+            >>> pred = [{'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9}]
+            >>> confusion = metrics._compute_detection_confusion(gt, pred)
         """
         # Initialize matrix
         size = self.background_idx + 1

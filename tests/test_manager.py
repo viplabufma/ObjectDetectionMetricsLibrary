@@ -3,22 +3,25 @@ Author: Matheus Levy
 Organization: Viplab - UFMA
 GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 '''
-from detmet import DetectionMetricsManager, export_metrics, save_confusion_matrix, plot_pr_curves, compute_metrics
+from detmet import DetectionMetricsManager, compute_metrics
 import numpy as np
 import json
 import pytest
 
 def test_compute_metrics():
+    """Test the compute_metrics function with real case data."""
     gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
     pred_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
     compute_metrics(gt_json_path, pred_json_path, exclude_classes=[0])
 
 def test_precision_simple():
+    """Test precision, recall, and F1-score for a simple dataset."""
     gt_json_path = "./tests/jsons/simple/gt_coco.json"
     predictions_json_path = "./tests/jsons/simple/predictions_coco.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
-    metrics = manager.calculate_metrics()
-    save_confusion_matrix(metrics['confusion_matrix_multiclass'], manager.labels,'confusion_matrix.png', background_class=False)
+    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
+    result = manager.calculate_metrics()
+    result.plot_confusion_matrix('confusion_matrix.png', background_class=False)
+    metrics = result.metrics
     assert metrics['person']['precision'] == np.float64(0.6666666666666666)
     assert metrics['person']['recall'] == np.float64(0.6666666666666666)
     assert metrics['person']['f1'] == np.float64(0.6666666666666666)
@@ -32,10 +35,12 @@ def test_precision_simple():
     assert metrics['global']['mAP'] == np.float64(0.16831683168316833)
 
 def test_precision_medium():
+    """Test precision, recall, and F1-score for a medium complexity dataset."""
     gt_json_path = "./tests/jsons/medium/gt_coco.json"
     predictions_json_path = "./tests/jsons/medium/predictions_coco.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path,result_path=predictions_json_path)
-    metrics = manager.calculate_metrics()
+    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
+    result = manager.calculate_metrics()
+    metrics = result.metrics
     assert metrics['cat']['precision'] == np.float64(1.0)
     assert metrics['cat']['recall'] == np.float64(0.3333333333333333)
     assert metrics['cat']['f1'] == np.float64(0.5)
@@ -57,12 +62,15 @@ def test_precision_medium():
     assert metrics['global']['mAP'] == np.float64(0.33663366336633654)
 
 def test_export_json():
+    """Test exporting metrics to JSON and verify content."""
     gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
     predictions_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
     manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
-    metrics = manager.calculate_metrics(exclude_class=[0])
-    export_metrics(metrics)
-    plot_pr_curves(metrics['pr_curves'], output_path='./pr.png', show= False)
+    result = manager.calculate_metrics(exclude_class=[0])
+    result.export(format='json', path='.')
+    result.plot_pr_curves(output_path='./pr.png', show=False)
+    with open('./metrics.json', 'r') as f:
+        data = json.load(f)
     with open('metrics.json', 'r') as f:
         data = json.load(f)
     
@@ -199,3 +207,24 @@ def test_export_json():
     assert data['Trichuris trichiura']['fn'] == 55
     assert data['Trichuris trichiura']['iou'] == pytest.approx(0.9440402388572693)
     assert data['Trichuris trichiura']['agg_iou'] == pytest.approx(0.9440361261367798)
+
+def test_invalid_json():
+    """Test handling of invalid JSON files."""
+    invalid_json_path = "./tests/jsons/invalid.json"
+    with open(invalid_json_path, 'w') as f:
+        f.write("invalid json content")
+    
+    with pytest.raises(ValueError, match="Invalid JSON file"):
+        manager = DetectionMetricsManager(gt_path=invalid_json_path, result_path="./tests/jsons/simple/predictions_coco.json")
+
+def test_invalid_thresholds():
+    """Test handling of invalid IoU and confidence thresholds."""
+    gt_json_path = "./tests/jsons/simple/gt_coco.json"
+    pred_json_path = "./tests/jsons/simple/predictions_coco.json"
+    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=pred_json_path)
+    
+    with pytest.raises(ValueError):
+        manager.calculate_metrics(iou_thr=1.5)
+    
+    with pytest.raises(ValueError):
+        manager.calculate_metrics(conf_thr=-0.1)
