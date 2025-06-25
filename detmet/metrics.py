@@ -21,12 +21,23 @@ def bbox_iou(box1: list, box2: list) -> float:
     """
     Calculate Intersection over Union (IoU) between two COCO-format bounding boxes.
 
-    Args:
-        box1 (list[float]): [x, y, width, height] of first bounding box
-        box2 (list[float]): [x, y, width, height] of second bounding box
+    Parameters
+    ----------
+    box1 : list[float]
+        [x, y, width, height] of first bounding box
+    box2 : list[float]
+        [x, y, width, height] of second bounding box
 
-    Returns:
-        float: IoU value between 0.0 and 1.0
+    Returns
+    -------
+    float
+        IoU value between 0.0 and 1.0
+
+    Examples
+    --------
+    >>> box1 = [10, 10, 20, 20]
+    >>> box2 = [15, 15, 20, 20]
+    >>> iou = bbox_iou(box1, box2)
     """
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
@@ -48,12 +59,29 @@ def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndar
     """
     Compute IoU between multiple ground truth and predicted bounding boxes.
 
-    Args:
-        gt_boxes (np.ndarray): [N, 4] array of ground truth boxes as [x1, y1, x2, y2]
-        pred_boxes (np.ndarray): [M, 4] array of predicted boxes as [x1, y1, x2, y2]
+    Parameters
+    ----------
+    gt_boxes : np.ndarray
+        [N, 4] array of ground truth boxes as [x1, y1, x2, y2]
+    pred_boxes : np.ndarray
+        [M, 4] array of predicted boxes as [x1, y1, x2, y2]
 
-    Returns:
-        np.ndarray: [N, M] matrix of IoU values
+    Returns
+    -------
+    np.ndarray
+        [N, M] matrix of IoU values
+
+    Notes
+    -----
+    - Handles empty input arrays by returning a zero matrix
+    - Uses broadcasting for efficient computation
+    - Returns 0.0 for boxes with no overlap
+
+    Examples
+    --------
+    >>> gt = np.array([[10, 10, 20, 20]])
+    >>> pred = np.array([[15, 15, 25, 25]])
+    >>> iou_matrix = vectorized_bbox_iou(gt, pred)
     """
     # Ensure arrays are 2D: (num_boxes, 4)
     gt_boxes = gt_boxes.reshape(-1, 4)
@@ -93,19 +121,26 @@ def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xy
     """
     Compute IoU matrix between ground truth and predicted annotations.
 
-    Args:
-        gt_anns: List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2].
-        pred_anns: List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2].
-        convert_to_xyxy: If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
-            are already in [x1, y1, x2, y2].
+    Parameters
+    ----------
+    gt_anns : List[dict]
+        List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
+    pred_anns : List[dict]
+        List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
+    convert_to_xyxy : bool, optional
+        If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
+        are already in [x1, y1, x2, y2], by default True
 
-    Returns:
-        np.ndarray: IoU matrix of shape (num_gt, num_pred).
+    Returns
+    -------
+    np.ndarray
+        IoU matrix of shape (num_gt, num_pred)
 
-    Examples:
-        >>> gt = [{'bbox': [10, 10, 20, 20]}]
-        >>> pred = [{'bbox': [12, 12, 18, 18]}]
-        >>> iou_matrix = compute_iou_matrix(gt, pred)
+    Examples
+    --------
+    >>> gt = [{'bbox': [10, 10, 20, 20]}]
+    >>> pred = [{'bbox': [12, 12, 18, 18]}]
+    >>> iou_matrix = compute_iou_matrix(gt, pred)
     """
     if not gt_anns and not pred_anns:
         return np.zeros((0, 0))
@@ -127,12 +162,22 @@ def precision(tp: int, fp: int) -> float:
     """
     Compute precision metric.
 
-    Args:
-        tp (int): Number of true positives
-        fp (int): Number of false positives
+    Parameters
+    ----------
+    tp : int
+        Number of true positives
+    fp : int
+        Number of false positives
 
-    Returns:
-        float: Precision value
+    Returns
+    -------
+    float
+        Precision value
+
+    Notes
+    -----
+    Precision = TP / (TP + FP)
+    Returns 0.0 when denominator is zero
     """
     return tp / (tp + fp) if (tp + fp) > 0 else 0.0
 
@@ -141,26 +186,46 @@ def recall(tp: int, fn: int) -> float:
     """
     Compute recall metric.
 
-    Args:
-        tp (int): Number of true positives
-        fn (int): Number of false negatives
+    Parameters
+    ----------
+    tp : int
+        Number of true positives
+    fn : int
+        Number of false negatives
 
-    Returns:
-        float: Recall value
+    Returns
+    -------
+    float
+        Recall value
+
+    Notes
+    -----
+    Recall = TP / (TP + FN)
+    Returns 0.0 when denominator is zero
     """
     return tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
 
 def f1(precision_val: float, recall_val: float) -> float:
     """
-    Compute F1 score.
+    Compute F1 score from precision and recall.
 
-    Args:
-        precision_val (float): Precision value
-        recall_val (float): Recall value
+    Parameters
+    ----------
+    precision_val : float
+        Precision value
+    recall_val : float
+        Recall value
 
-    Returns:
-        float: F1 score
+    Returns
+    -------
+    float
+        F1 score
+
+    Notes
+    -----
+    F1 = 2 * (precision * recall) / (precision + recall)
+    Returns 0.0 when denominator is zero
     """
     return 2 * precision_val * recall_val / (precision_val + recall_val) if (precision_val + recall_val) > 0 else 0.0
 
@@ -169,13 +234,23 @@ def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple:
     """
     Compute precision, recall, and F1 score together.
 
-    Args:
-        tp (int): Number of true positives
-        fp (int): Number of false positives
-        fn (int): Number of false negatives
+    Parameters
+    ----------
+    tp : int
+        Number of true positives
+    fp : int
+        Number of false positives
+    fn : int
+        Number of false negatives
 
-    Returns:
-        tuple: (precision, recall, F1)
+    Returns
+    -------
+    tuple
+        (precision, recall, F1) values
+
+    Examples
+    --------
+    >>> p, r, f = precision_recall_f1(5, 2, 3)
     """
     p = precision(tp, fp)
     r = recall(tp, fn)
@@ -189,16 +264,35 @@ def compute_precision_recall_curve(
     class_agnostic: bool = False
 ) -> Dict[str, Any]:
     """
-    Compute precision-recall curve data.
+    Compute precision-recall curve data for object detection evaluation.
 
-    Args:
-        all_gts (List[List[dict]]): List of ground truths per image
-        all_preds (List[List[dict]]): List of predictions per image
-        iou_threshold (float): IoU threshold for true positive
-        class_agnostic (bool): Whether to ignore classes
+    Parameters
+    ----------
+    all_gts : List[List[dict]]
+        List of ground truths per image
+    all_preds : List[List[dict]]
+        List of predictions per image
+    iou_threshold : float, optional
+        IoU threshold for true positive, by default 0.5
+    class_agnostic : bool, optional
+        Whether to ignore classes during matching, by default False
 
-    Returns:
-        Dict[str, Any]: Precision-recall curve data
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary containing:
+        - 'precision': Array of precision values
+        - 'recall': Array of recall values
+        - 'thresholds': Array of confidence thresholds
+        - 'ap': Global Average Precision
+        - 'per_class': Dict of per-class AP values
+
+    Notes
+    -----
+    - Processes predictions in descending confidence order
+    - Implements COCO-style 101-point interpolation for AP calculation
+    - Handles both class-aware and class-agnostic evaluation
+    - Excludes crowd annotations from matching
     """
     # Flatten and filter predictions
     flat_preds = []
@@ -313,12 +407,23 @@ def _compute_ap(recall: list, precision: list) -> float:
     """
     Compute Average Precision (AP) using 101-point interpolation (COCO standard).
 
-    Args:
-        recall (list): Recall values
-        precision (list): Precision values
+    Parameters
+    ----------
+    recall : list
+        Recall values at different confidence thresholds
+    precision : list
+        Precision values at different confidence thresholds
 
-    Returns:
-        float: Average Precision
+    Returns
+    -------
+    float
+        Average Precision (AP) score
+
+    Notes
+    -----
+    - Implements COCO-style 101-point interpolation
+    - Ensures precision is monotonically decreasing
+    - Handles edge cases with no detections
     """
     # Pad with 0 and 1 endpoints
     r = np.array([0.0] + recall + [1.0])
@@ -350,18 +455,49 @@ class DetectionMetrics:
     - Excludes specified classes from evaluation
     - Provides numerical metrics and confusion matrices
 
-    Attributes:
-        names (Dict[int, str]): Class ID to name mapping
-        iou_thr (float): IoU threshold for true positive matching (default=0.5)
-        conf_thr (float): Confidence threshold for predictions (default=0.5)
-        matrix (np.ndarray): Global detection confusion matrix
-        multiclass_matrix (np.ndarray): Multiclass confusion matrix
-        class_map (dict): Mapping from class IDs to matrix indices
-        background_idx (int): Matrix index for background class
-        stats (dict): Accumulated statistics across processed images
-        all_preds (list): All predictions across images (for COCO evaluation)
-        all_gts (list): All ground truths across images
-        image_counter (int): Counter for processed images
+    Parameters
+    ----------
+    names : dict
+        Class ID to name mapping
+    iou_thr : float, optional
+        IoU threshold for true positive matching, by default 0.5
+    conf_thr : float, optional
+        Confidence threshold for predictions, by default 0.5
+    gt_coco : COCO, optional
+        COCO object for ground truths
+    predictions_coco : COCO, optional
+        COCO object for predictions
+    exclude_classes : list, optional
+        Class IDs to exclude from evaluation, by default None
+    store_pr_data : bool, optional
+        Whether to store PR curve data, by default False
+    store_pr_curves : bool, optional
+        Whether to compute PR curves, by default True
+
+    Attributes
+    ----------
+    names : Dict[int, str]
+        Class ID to name mapping
+    iou_thr : float
+        IoU threshold for true positive matching
+    conf_thr : float
+        Confidence threshold for predictions
+    matrix : np.ndarray
+        Global detection confusion matrix
+    multiclass_matrix : np.ndarray
+        Multiclass confusion matrix
+    class_map : dict
+        Mapping from class IDs to matrix indices
+    background_idx : int
+        Matrix index for background class
+    stats : dict
+        Accumulated statistics across processed images
+    all_preds : list
+        All predictions across images (for COCO evaluation)
+    all_gts : list
+        All ground truths across images
+    image_counter : int
+        Counter for processed images
     """
 
     def __init__(
@@ -375,19 +511,6 @@ class DetectionMetrics:
         store_pr_data: bool = False,
         store_pr_curves: bool = True
     ):
-        """
-        Initialize DetectionMetrics.
-
-        Args:
-            names (dict): Class ID to name mapping
-            iou_thr (float): IoU threshold for true positive (default 0.5)
-            conf_thr (float): Confidence threshold for predictions (default 0.5)
-            gt_coco (COCO, optional): COCO object for ground truths
-            predictions_coco (COCO, optional): COCO object for predictions
-            exclude_classes (list[int], optional): Class IDs to exclude
-            store_pr_data (bool): Whether to store PR curve data
-            store_pr_curves (bool): Whether to compute PR curves
-        """
         self.names = names
         self.iou_thr = iou_thr
         self.conf_thr = conf_thr
@@ -406,7 +529,17 @@ class DetectionMetrics:
         self.reset()
 
     def reset(self) -> None:
-        """Reset all internal accumulators and state."""
+        """
+        Reset all internal accumulators and state.
+
+        Resets:
+        - Confusion matrices
+        - Class mapping
+        - Statistical accumulators
+        - Prediction/ground truth storage
+        - Image counter
+        - PR curve data
+        """
         self.matrix = None
         self.multiclass_matrix = None
         self.class_map = {}
@@ -424,12 +557,18 @@ class DetectionMetrics:
         """
         Update accumulated IoU metrics for a class.
 
-        Args:
-            cid (int): Class ID
-            iou (float): IoU value
-            inter (float): Intersection area
-            gt_area (float): Ground truth area
-            pred_area (float): Predicted area
+        Parameters
+        ----------
+        cid : int
+            Class ID
+        iou : float
+            IoU value
+        inter : float
+            Intersection area
+        gt_area : float
+            Ground truth area
+        pred_area : float
+            Predicted area
         """
         union = gt_area + pred_area - inter
         self.per_class_iou_sum[cid] += iou
@@ -452,8 +591,10 @@ class DetectionMetrics:
         """
         Increment support count for each class.
 
-        Args:
-            gt_anns (list): List of ground truth annotations
+        Parameters
+        ----------
+        gt_anns : list
+            List of ground truth annotations
         """
         for ann in gt_anns:
             if ann.get('iscrowd', 0) == 1:
@@ -473,9 +614,17 @@ class DetectionMetrics:
         4. Compute and accumulate confusion matrices
         5. Store predictions for COCO mAP
 
-        Args:
-            gt_anns (list): Ground truth annotations
-            pred_anns (list): Predicted annotations
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations for the image
+        pred_anns : list
+            Predicted annotations for the image
+
+        Notes
+        -----
+        - Handles both crowd and non-crowd annotations
+        - Stores predictions above confidence threshold for COCO evaluation
         """
         # Filter unwanted classes
         gt = [g for g in gt_anns if g['category_id'] not in self.exclude_classes]
@@ -523,15 +672,17 @@ class DetectionMetrics:
         """
         Separate crowd/non-crowd GTs and filter predictions by confidence.
 
-        Args:
-            gt_anns: Ground truth annotations
-            pred_anns: Prediction annotations
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        pred_anns : list
+            Prediction annotations
 
-        Returns:
-            Tuple containing:
-            - Non-crowd ground truths
-            - Crowd ground truths
-            - Filtered predictions
+        Returns
+        -------
+        Tuple[List[dict], List[dict], List[dict]]
+            Non-crowd ground truths, crowd ground truths, filtered predictions
         """
         gt_non_crowd = [g for g in gt_anns if g.get('iscrowd', 0) == 0]
         gt_crowd = [g for g in gt_anns if g.get('iscrowd', 0) == 1]
@@ -548,13 +699,20 @@ class DetectionMetrics:
         """
         Handle edge cases for detection confusion matrix.
 
-        Args:
-            gt_non_crowd: Non-crowd ground truths
-            gt_crowd: Crowd ground truths
-            preds: Filtered predictions
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_non_crowd : list
+            Non-crowd ground truths
+        gt_crowd : list
+            Crowd ground truths
+        preds : list
+            Filtered predictions
+        confusion : np.ndarray
+            Confusion matrix
 
-        Returns:
+        Returns
+        -------
+        bool
             True if edge case handled, False otherwise
         """
         # Case 1: No predictions → all non-crowd GTs are FN
@@ -587,14 +745,21 @@ class DetectionMetrics:
         """
         Match predictions to ground truths per class using IoU threshold.
 
-        Args:
-            gt_non_crowd: Non-crowd ground truths
-            preds: Filtered predictions
-            iou_mat: Precomputed IoU matrix
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_non_crowd : list
+            Non-crowd ground truths
+        preds : list
+            Filtered predictions
+        iou_mat : np.ndarray
+            Precomputed IoU matrix
+        confusion : np.ndarray
+            Confusion matrix
 
-        Returns:
-            Tuple of matched status for ground truths and predictions
+        Returns
+        -------
+        Tuple[List[bool], List[bool]]
+            Matched status for ground truths and predictions
         """
         gt_matched = [False] * len(gt_non_crowd)
         pred_matched = [False] * len(preds)
@@ -650,12 +815,18 @@ class DetectionMetrics:
         """
         Identify predictions matching crowd annotations.
 
-        Args:
-            gt_crowd: Crowd ground truths
-            preds: Filtered predictions
-            pred_matched: Prediction matched status
+        Parameters
+        ----------
+        gt_crowd : list
+            Crowd ground truths
+        preds : list
+            Filtered predictions
+        pred_matched : List[bool]
+            Prediction matched status
 
-        Returns:
+        Returns
+        -------
+        List[bool]
             Updated list indicating crowd-matched predictions
         """
         crowd_matched = [False] * len(preds)
@@ -681,13 +852,20 @@ class DetectionMetrics:
         """
         Update confusion matrix for unmatched items.
 
-        Args:
-            gt_non_crowd: Non-crowd ground truths
-            preds: Filtered predictions
-            gt_matched: GT matched status
-            pred_matched: Prediction matched status
-            crowd_matched: Crowd-matched status
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_non_crowd : list
+            Non-crowd ground truths
+        preds : list
+            Filtered predictions
+        gt_matched : List[bool]
+            GT matched status
+        pred_matched : List[bool]
+            Prediction matched status
+        crowd_matched : List[bool]
+            Crowd-matched status
+        confusion : np.ndarray
+            Confusion matrix
         """
         # Process false negatives (unmatched non-crowd GTs)
         for i, matched in enumerate(gt_matched):
@@ -712,28 +890,27 @@ class DetectionMetrics:
         iou_mat_full: np.ndarray = None
     ) -> np.ndarray:
         """
-        Compute the detection confusion matrix (True Positives, False Positives, False Negatives).
+        Compute detection confusion matrix (TP, FP, FN).
 
-        This method calculates the confusion matrix for object detection by matching ground truth
-        annotations with predictions based on the IoU threshold. It handles edge cases such as
-        no predictions or no ground truths, and accounts for crowd annotations.
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        pred_anns : list
+            Predicted annotations
+        iou_mat_full : np.ndarray, optional
+            Precomputed IoU matrix, by default None
 
-        Args:
-            gt_anns: List of ground truth annotations, each containing 'category_id', 'bbox', and
-                optionally 'iscrowd'.
-            pred_anns: List of predicted annotations, each containing 'category_id', 'bbox', and 'score'.
-            iou_mat_full: Precomputed IoU matrix between ground truths and predictions. If None,
-                it will be computed internally.
+        Returns
+        -------
+        np.ndarray
+            Detection confusion matrix
 
-        Returns:
-            np.ndarray: Confusion matrix of shape (n_classes + 1, n_classes + 1), where the last
-                row/column represents the background class.
-
-        Examples:
-            >>> metrics = DetectionMetrics(names={1: 'person'})
-            >>> gt = [{'category_id': 1, 'bbox': [10, 10, 20, 20]}]
-            >>> pred = [{'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9}]
-            >>> confusion = metrics._compute_detection_confusion(gt, pred)
+        Notes
+        -----
+        - Handles crowd annotations separately
+        - Uses per-class matching strategy
+        - Updates IoU metrics for matched pairs
         """
         # Initialize matrix
         size = self.background_idx + 1
@@ -770,18 +947,23 @@ class DetectionMetrics:
         """
         Perform global greedy matching for multiclass confusion matrix.
 
-        Args:
-            gt_anns: Ground truth annotations
-            pred_anns: Prediction annotations
-            iou_matrix: IoU matrix
-            iou_thr: IoU threshold
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        pred_anns : list
+            Prediction annotations
+        iou_matrix : np.ndarray
+            IoU matrix between GTs and predictions
+        iou_thr : float
+            IoU threshold for matching
+        confusion : np.ndarray
+            Multiclass confusion matrix
 
-        Returns:
-            Tuple containing:
-            - Matched status for ground truths
-            - Matched status for predictions
-            - Updated confusion matrix
+        Returns
+        -------
+        tuple[list, bool, np.ndarray]
+            Matched status for GTs, matched status for predictions, updated confusion matrix
         """
         n_gt = len(gt_anns)
         n_pred = len(pred_anns)
@@ -817,13 +999,24 @@ class DetectionMetrics:
         """
         Compute multiclass confusion matrix.
 
-        Args:
-            gt_anns: Ground truth annotations
-            pred_anns: Prediction annotations
-            iou_mat_full: Precomputed IoU matrix
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        pred_anns : list
+            Prediction annotations
+        iou_mat_full : np.ndarray, optional
+            Precomputed IoU matrix, by default None
 
-        Returns:
+        Returns
+        -------
+        np.ndarray
             Multiclass confusion matrix
+
+        Notes
+        -----
+        - Uses global greedy matching strategy
+        - Includes background class for unmatched items
         """
         preds = [p for p in pred_anns if p['score'] >= self.conf_thr]
         size = self.background_idx + 1
@@ -848,12 +1041,18 @@ class DetectionMetrics:
         """
         Handle edge cases for confusion matrix.
 
-        Args:
-            gt_anns: Ground truth annotations
-            pred_anns: Prediction annotations
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        pred_anns : list
+            Prediction annotations
+        confusion : np.ndarray
+            Confusion matrix
 
-        Returns:
+        Returns
+        -------
+        bool
             True if edge case handled, False otherwise
         """
         if not pred_anns:
@@ -874,10 +1073,14 @@ class DetectionMetrics:
         """
         Process unmatched ground truths as false negatives.
 
-        Args:
-            gt_anns: Ground truth annotations
-            gt_matched: GT matched status
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        gt_anns : list
+            Ground truth annotations
+        gt_matched : list
+            GT matched status
+        confusion : np.ndarray
+            Confusion matrix
         """
         for i, matched in enumerate(gt_matched):
             if not matched:
@@ -889,10 +1092,14 @@ class DetectionMetrics:
         """
         Process unmatched predictions as false positives.
 
-        Args:
-            pred_anns: Prediction annotations
-            pred_matched: Prediction matched status
-            confusion: Confusion matrix
+        Parameters
+        ----------
+        pred_anns : list
+            Prediction annotations
+        pred_matched : list
+            Prediction matched status
+        confusion : np.ndarray
+            Confusion matrix
         """
         for j, matched in enumerate(pred_matched):
             if not matched:
@@ -904,8 +1111,10 @@ class DetectionMetrics:
         """
         Update statistics from detection confusion matrix.
 
-        Args:
-            confusion: Detection confusion matrix
+        Parameters
+        ----------
+        confusion : np.ndarray
+            Detection confusion matrix
         """
         for cid, idx in self.class_map.items():
             tp = confusion[idx, idx]
@@ -919,8 +1128,19 @@ class DetectionMetrics:
         """
         Calculate final evaluation metrics.
 
-        Returns:
-            dict: Comprehensive metrics dictionary
+        Returns
+        -------
+        dict
+            Comprehensive metrics dictionary containing:
+            - Per-class metrics (precision, recall, f1, support, tp, fp, fn, iou, agg_iou, ap)
+            - Global metrics (precision, recall, f1, support, tp, fp, fn, mAP, mAP50, mAP75, mIoU)
+            - PR curves data (if enabled)
+
+        Notes
+        -----
+        - Computes COCO mAP if COCO objects are available
+        - Calculates both average IoU and aggregate IoU per class
+        - Includes PR curve data when store_pr_curves is enabled
         """
         def has_coco_gt(): return self.gt_coco is not None
         def has_coco_pred(): return self.predictions_coco is not None
@@ -1001,8 +1221,10 @@ class DetectionMetrics:
         """
         Compute and store Precision-Recall curves.
 
-        Args:
-            metrics (dict): Computed metrics dictionary
+        Parameters
+        ----------
+        metrics : dict
+            Computed metrics dictionary
         """
         if not self.gt_coco or not self.predictions_coco:
             return
@@ -1068,12 +1290,23 @@ class DetectionMetrics:
         """
         Compute COCO-style mean Average Precision (mAP).
 
-        Args:
-            gt_coco: COCO object for ground truths
-            predictions_coco: COCO object for predictions
+        Parameters
+        ----------
+        gt_coco : COCO
+            COCO object for ground truths
+        predictions_coco : COCO
+            COCO object for predictions
 
-        Returns:
-            tuple: (mAP, mAP50, mAP75, per_class_ap)
+        Returns
+        -------
+        tuple
+            (mAP, mAP50, mAP75, per_class_ap)
+
+        Notes
+        -----
+        - Uses pycocotools for COCO evaluation
+        - Computes mAP at IoU thresholds .50:.05:.95
+        - Returns per-class AP when available
         """
         with io.StringIO() as buf, contextlib.redirect_stdout(buf):
             evaluator = COCOeval(gt_coco, predictions_coco, 'bbox')
@@ -1110,18 +1343,30 @@ class DetectionMetrics:
         """
         Single-value fitness score (global F1 score).
 
-        Returns:
-            float: Global F1 score
+        Returns
+        -------
+        float
+            Global F1 score
         """
         return self.compute_metrics()['global']['f1']
 
     @property
     def results_dict(self) -> dict:
         """
-        Flattened results dictionary.
+        Flattened results dictionary with human-readable keys.
 
-        Returns:
-            dict: Flat mapping of metric names to values
+        Returns
+        -------
+        dict
+            Flat mapping of metric names to values with keys formatted as:
+            - 'metric/global' for global metrics
+            - 'metric/class_name' for per-class metrics
+            - 'multiclass_confusion_matrix' for confusion matrix
+
+        Notes
+        -----
+        - Includes multiclass confusion matrix in the dictionary
+        - Uses class names from the names dictionary
         """
         metrics = self.compute_metrics()
         res = {}
@@ -1141,8 +1386,15 @@ class DetectionMetrics:
         """
         Get labels for confusion matrix.
 
-        Returns:
-            list: Class names with 'background' as last element
+        Returns
+        -------
+        list
+            Class names with 'background' as last element
+
+        Notes
+        -----
+        - Order corresponds to confusion matrix rows/columns
+        - Excludes classes specified in exclude_classes
         """
         valid_ids = [cid for cid in self.names if cid not in self.exclude_classes]
         sorted_ids = sorted(valid_ids)

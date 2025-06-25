@@ -15,16 +15,42 @@ class DetectionMetricsManager:
     """
     Manages the calculation of object detection metrics by comparing ground truth and prediction results.
     
-    Attributes:
-        gt_path (str): Path to ground truth JSON file (COCO format)
-        result_path (str): Path to prediction results JSON file (COCO predictions format)
-        gt_coco (COCO): COCO object containing ground truth data
-        dt_coco (COCO): COCO object containing prediction data
-        names (Dict[int, str]): Mapping of category_id to class name
-        labels (List[str]): Class labels including background
+    This class handles loading COCO-format datasets, processing images, and computing various detection metrics
+    including precision, recall, F1-score, confusion matrices, and COCO-style mAP.
+    
+    Attributes
+    ----------
+    gt_path : str
+        Path to ground truth JSON file (COCO format)
+    result_path : str
+        Path to prediction results JSON file (COCO predictions format)
+    gt_coco : COCO
+        COCO object containing ground truth data
+    dt_coco : COCO
+        COCO object containing prediction data
+    names : Dict[int, str]
+        Mapping of category_id to class name
+    labels : List[str]
+        Class labels including background
+
+    Examples
+    --------
+    >>> manager = DetectionMetricsManager('path/to/gt.json', 'path/to/predictions.json')
+    >>> metrics = manager.calculate_metrics()
+    >>> metrics.plot_confusion_matrix('confusion.png')
     """
     
     def __init__(self, gt_path: str, result_path: str):
+        """
+        Initialize DetectionMetricsManager with ground truth and prediction paths.
+        
+        Parameters
+        ----------
+        gt_path : str
+            Path to COCO-format ground truth JSON file
+        result_path : str
+            Path to COCO-format prediction results JSON file
+        """
         self._initialize(gt_path, result_path)
         self.labels = []
 
@@ -38,7 +64,16 @@ class DetectionMetricsManager:
         self._load_data()
 
     def update_data(self, gt_path: str, result_path: str) -> None:
-        """Update data sources and reload all data"""
+        """
+        Update data sources and reload all data.
+        
+        Parameters
+        ----------
+        gt_path : str
+            New path to ground truth JSON file
+        result_path : str
+            New path to prediction results JSON file
+        """
         self._initialize(gt_path, result_path)
         self._load_data()
 
@@ -65,17 +100,28 @@ class DetectionMetricsManager:
         }
         
     def get_image_ids(self) -> List[int]:
-        """Get list of image IDs present in ground truth"""
+        """
+        Get list of image IDs present in ground truth.
+        
+        Returns
+        -------
+        List[int]
+            List of image IDs in the dataset
+        """
         return self.gt_coco.getImgIds()
     
     def get_annotations(self, img_id: int) -> Tuple[List[dict], List[dict]]:
         """
         Retrieve ground truth and prediction annotations for a specific image.
         
-        Args:
-            img_id: Image ID
+        Parameters
+        ----------
+        img_id : int
+            Image ID to retrieve annotations for
             
-        Returns:
+        Returns
+        -------
+        Tuple[List[dict], List[dict]]
             Tuple containing:
             - List of ground truth annotations
             - List of prediction annotations
@@ -94,7 +140,36 @@ class DetectionMetricsManager:
         ann_ids = self.dt_coco.getAnnIds(imgIds=img_id)
         return self.dt_coco.loadAnns(ann_ids)
     
-    def calculate_metrics(self, iou_thr: float = 0.5, conf_thr: float = 0.5, exclude_class: Optional[list] = None) -> MetricsResult:
+    def calculate_metrics(self, iou_thr: float = 0.5, conf_thr: float = 0.5, 
+                          exclude_class: Optional[list] = None) -> MetricsResult:
+        """
+        Calculate detection metrics for the loaded dataset.
+        
+        Parameters
+        ----------
+        iou_thr : float, optional
+            IoU threshold for true positive matching (0.0-1.0), by default 0.5
+        conf_thr : float, optional
+            Confidence threshold for predictions (0.0-1.0), by default 0.5
+        exclude_class : Optional[list], optional
+            List of class IDs to exclude from evaluation, by default None
+            
+        Returns
+        -------
+        MetricsResult
+            Object containing computed metrics and visualization methods
+            
+        Raises
+        ------
+        ValueError
+            If iou_thr or conf_thr are not in [0.0, 1.0]
+            
+        Examples
+        --------
+        >>> manager = DetectionMetricsManager('gt.json', 'preds.json')
+        >>> result = manager.calculate_metrics(iou_thr=0.5, conf_thr=0.5)
+        >>> print(result.metrics['global']['precision'])
+        """
         check_normalized(iou_thr)
         check_normalized(conf_thr)
         metrics_calculator = DetectionMetrics(
@@ -127,7 +202,49 @@ class DetectionMetricsManager:
             gt_anns, pred_anns = self.get_annotations(img_id)
             metrics_calculator.process_image(gt_anns, pred_anns)
     
-def compute_metrics(groundtruth_json_path: str, prediction_json_path: str, iou_thr: float = 0.5 , conf_thr: float = 0.0, exclude_classes: list = None) -> None:
+def compute_metrics(groundtruth_json_path: str, prediction_json_path: str, 
+                   iou_thr: float = 0.5, conf_thr: float = 0.0, 
+                   exclude_classes: list = None) -> None:
+    """
+    Compute and export detection metrics with visualizations.
+    
+    This function provides a simplified interface for:
+    1. Computing detection metrics
+    2. Saving confusion matrix plot
+    3. Exporting metrics to JSON
+    4. Plotting PR curves
+    
+    Parameters
+    ----------
+    groundtruth_json_path : str
+        Path to COCO-format ground truth JSON file
+    prediction_json_path : str
+        Path to COCO-format prediction results JSON file
+    iou_thr : float, optional
+        IoU threshold for true positive matching (0.0-1.0), by default 0.5
+    conf_thr : float, optional
+        Confidence threshold for predictions (0.0-1.0), by default 0.0
+    exclude_classes : list, optional
+        List of class IDs to exclude from evaluation, by default None
+    
+    Raises
+    ------
+    ValueError
+        If iou_thr or conf_thr are not in [0.0, 1.0]
+    
+    Examples
+    --------
+    >>> compute_metrics(
+    ...     'path/to/gt.json',
+    ...     'path/to/predictions.json',
+    ...     iou_thr=0.5,
+    ...     conf_thr=0.5
+    ... )
+    # Generates:
+    #   - confusion_matrix.png
+    #   - metrics.json
+    #   - pr_curves.png
+    """
     check_normalized(iou_thr)
     check_normalized(conf_thr)
     manager = DetectionMetricsManager(gt_path=groundtruth_json_path,result_path=prediction_json_path)

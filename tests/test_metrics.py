@@ -5,11 +5,12 @@
 """
 
 import numpy as np
-from detmet import DetectionMetrics, bbox_iou, compute_precision_recall_curve
+from detmet import DetectionMetrics, bbox_iou
 
 def test_multi_image_processing():
-    """Tests cumulative processing of multiple images with different scenarios.
-    
+    """
+    Test cumulative processing of multiple images with different scenarios.
+
     Verifies:
     - Correct accumulation of confusion matrix across images
     - Per-class metric calculation after multiple images
@@ -57,12 +58,14 @@ def test_multi_image_processing():
     assert metrics_result['global']['mIoU'] == 0.5400000214576721
 
 def test_single_image_basic():
-    """Basic test with single image and perfect detections.
-    
+    """
+    Basic test with single image and perfect detections.
+
     Verifies:
     - Correct matching when IoU > threshold
     - Precision/recall=1.0 for all classes
     - Processing multiple instances per image
+    - IoU calculation accuracy for matched boxes
     """
     gt_anns = [
         {'category_id': 1, 'bbox': [10, 10, 20, 20]},
@@ -88,12 +91,14 @@ def test_single_image_basic():
     assert result['global']['mIoU'] == 0.8405554890632629
 
 def test_no_predictions():
-    """Tests scenario with no predictions (model fails to detect any objects).
-    
+    """
+    Test scenario with no predictions (model fails to detect any objects).
+
     Verifies:
     - Precision and recall should be 0.0 when there are GTs but no predictions
     - Support count should reflect number of GTs
     - FN should equal number of GTs
+    - IoU metrics remain 0.0 with no detections
     """
     gt_anns = [
         {'category_id': 1, 'bbox': [10, 10, 20, 20]},
