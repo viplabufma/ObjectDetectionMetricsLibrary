@@ -7,24 +7,34 @@ The `DetectionMetricsManager` class provides a high-level interface for calculat
 To export metrics, confusion matrix and precision x recall curves:
 ```python
 from detmet import compute_metrics
-gt_json_path = "annotations.coco.json"
-pred_json_path = "predictions.json"
-compute_metrics(gt_json_path, pred_json_path)
+compute_metrics(
+    groundtruth_json_path="annotations.coco.json",
+    prediction_json_path="predictions.json"
+)
 ```
 
 ### Compute Metrics Separately
 To have a most granular control use the class DetectionMetricsManager. It works as an api to the DetectionMetrics class.
 ```python
 from detmet import DetectionMetricsManager
-gt_json_path = "annotations.coco.json"
-predictions_json_path = "predictions.json"
-manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
-result = manager.calculate_metrics()
-result.export(format='json', output_path='.')
-result.plot_pr_curves(output_path='./pr.png', show=False)
-result.plot_confusion_matrix(output_path='confusion_matrix.png', background_class=False)
-metrics = result.metrics
+
+mgr = DetectionMetricsManager(
+    groundtruth_json_path="annotations.coco.json",
+    prediction_json_path="predictions.json",
+    iou_thr=0.5,
+    conf_thr=0.5
+)
+res = mgr.calculate_metrics()
+res.export(format="json", output_path=".")
+res.plot_pr_curves(output_path="pr.png", show=False)
+res.plot_confusion_matrix(output_path="conf.png", background_class=False)
 ```
+
+## Metrics Available
+* Precision, Recall, F1
+* Precision-Recall Curves
+* Confusion Matrix ((C+background)x(C+background))
+* AP per Class, mAP
 
 ## Documentation
 
