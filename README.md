@@ -4,7 +4,7 @@
 
 The `DetectionMetricsManager` class provides a high-level interface for calculating object detection metrics. Here's a basic usage example:
 
-To export metrics, confusion matrix and precision x recall curves:
+To export metrics, confusion matrix and precision x recall curves.:
 ```python
 from detmet import compute_metrics
 compute_metrics(
@@ -21,10 +21,8 @@ from detmet import DetectionMetricsManager
 mgr = DetectionMetricsManager(
     groundtruth_json_path="annotations.coco.json",
     prediction_json_path="predictions.json",
-    iou_thr=0.5,
-    conf_thr=0.5
 )
-res = mgr.calculate_metrics()
+res = mgr.calculate_metrics(iou_thr=0.5, conf_thr=0.0)
 res.export(format="json", output_path=".")
 res.plot_pr_curves(output_path="pr.png", show=False)
 res.plot_confusion_matrix(output_path="conf.png", background_class=False)
@@ -117,7 +115,7 @@ Manages the calculation of object detection metrics by comparing ground truth an
 |--------------|-------|---------|--------------------------------------------------|
 | `iou_thr`    | float  | 0.5      | IoU threshold for true positive matching (0.0-1.0)    |
 | `conf_thr`| float  | 0.5       | Confidence threshold for predictions (0.0-1.0)        |
-| `exclude_class`| list  | None       |List of class IDs to exclude from evaluation,        |
+| `exclude_classes`| list  | None       |List of class IDs to exclude from evaluation,        |
 
 Returns:
 ```MetricsResult```: Object containing computed metrics and visualization methods
@@ -176,10 +174,10 @@ Key Difference:
 
 ### Optimization Trick Explanation
 ```
-candidate_ious = iou_matrix[:, j].copy()
-candidate_ious[gt_matched] = -1.0
-best_i = np.argmax(candidate_ious)
-best_iou = candidate_ious[best_i]
+candidate_ious = iou_matrix[:, j].copy()  # IoU scores for the current detection (j)  
+candidate_ious[gt_matched] = -1.0         # Mask already matched ground truths  
+best_i = np.argmax(candidate_ious)        # Find the best remaining GT candidate  
+best_iou = candidate_ious[best_i]         # IoU of the best match  
 ```
 This numpy optimization efficiently finds the best unmatched ground truth:
 1. Create copy of IoU scores for current prediction

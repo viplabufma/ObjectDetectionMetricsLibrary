@@ -141,7 +141,7 @@ class DetectionMetricsManager:
         return self.dt_coco.loadAnns(ann_ids)
     
     def calculate_metrics(self, iou_thr: float = 0.5, conf_thr: float = 0.5, 
-                          exclude_class: Optional[list] = None) -> MetricsResult:
+                          exclude_classes: Optional[list] = None) -> MetricsResult:
         """
         Calculate detection metrics for the loaded dataset.
         
@@ -151,7 +151,7 @@ class DetectionMetricsManager:
             IoU threshold for true positive matching (0.0-1.0), by default 0.5
         conf_thr : float, optional
             Confidence threshold for predictions (0.0-1.0), by default 0.5
-        exclude_class : Optional[list], optional
+        exclude_classes : Optional[list], optional
             List of class IDs to exclude from evaluation, by default None
             
         Returns
@@ -178,7 +178,7 @@ class DetectionMetricsManager:
             conf_thr=conf_thr,
             gt_coco=self.gt_coco,
             predictions_coco=self.dt_coco,
-            exclude_classes=exclude_class,
+            exclude_classes=exclude_classes,
             store_pr_data=True,
             store_pr_curves=True
         )
@@ -248,7 +248,7 @@ def compute_metrics(groundtruth_json_path: str, prediction_json_path: str,
     check_normalized(iou_thr)
     check_normalized(conf_thr)
     manager = DetectionMetricsManager(groundtruth_json_path=groundtruth_json_path,prediction_json_path=prediction_json_path)
-    metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_class=exclude_classes)
+    metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_classes=exclude_classes)
     metrics.plot_confusion_matrix('confusion_matrix.png')
     metrics.export()
     metrics.plot_pr_curves()
