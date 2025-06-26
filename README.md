@@ -1,8 +1,7 @@
 # Object Detection Metrics Library
 
-## Get Started
+## Usage
 
-### Using DetectionMetricsManager
 The `DetectionMetricsManager` class provides a high-level interface for calculating object detection metrics. Here's a basic usage example:
 
 To export metrics, confusion matrix and precision x recall curves:
@@ -12,6 +11,22 @@ gt_json_path = "annotations.coco.json"
 pred_json_path = "predictions.json"
 compute_metrics(gt_json_path, pred_json_path)
 ```
+
+### Compute Metrics Separately
+To have a most granular control use the class DetectionMetricsManager. It works as an api to the DetectionMetrics class.
+```python
+from detmet import DetectionMetricsManager
+gt_json_path = "annotations.coco.json"
+predictions_json_path = "predictions.json"
+manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
+result = manager.calculate_metrics()
+result.export(format='json', output_path='.')
+result.plot_pr_curves(output_path='./pr.png', show=False)
+result.plot_confusion_matrix(output_path='confusion_matrix.png', background_class=False)
+metrics = result.metrics
+```
+
+## Documentation
 
 ### Input Data
 The input data must be a coco groundtruth json in the format:
@@ -74,20 +89,6 @@ Exports metrics dictionary to JSON format, save confusion_matrix.png and pr_curv
 | `iou_thr`       | float   | 0.5     | IoU threshold for true positive matching (0.0-1.0)                                 |
 | `conf_thr`     | float   | 0.5  |  Confidence threshold for predictions (0.0-1.0)    |
 | `exclude_classes`     | list   | None  |  List of class IDs to exclude from evaluation    |
-
-### Compute Metrics Separately
-To have a most granular control use the class DetectionMetricsManager. It works as an api to the DetectionMetrics class.
-```python
-from detmet import DetectionMetricsManager
-gt_json_path = "annotations.coco.json"
-predictions_json_path = "predictions.json"
-manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
-result = manager.calculate_metrics()
-result.export(format='json', output_path='.')
-result.plot_pr_curves(output_path='./pr.png', show=False)
-result.plot_confusion_matrix(output_path='confusion_matrix.png', background_class=False)
-metrics = result.metrics
-```
 
 #### ```DetectionMetricsManager``` Class
 
