@@ -5,55 +5,136 @@
 ### Using DetectionMetricsManager
 The `DetectionMetricsManager` class provides a high-level interface for calculating object detection metrics. Here's a basic usage example:
 
+To export metrics, confusion matrix and precision x recall curves:
 ```python
-from DetectionMetricsManager import DetectionMetricsManager, export_metrics, save_confusion_matrix
-
-# Initialize with ground truth and prediction paths
-gt_path = "/path/to/gt_coco.json"
-pred_path = "/path/to/predictions_coco.json"
-manager = DetectionMetricsManager(gt_path=gt_path, result_path=pred_path)
-
-# Calculate metrics
-metrics = manager.calculate_metrics()
-
-# Export metrics to JSON
-export_metrics(metrics, manager.labels)
-
-# Save confusion matrix visualization
-save_confusion_matrix(
-    metrics['confusion_matrix_multiclass'],
-    manager.labels,
-    path='confusion_matrix.png',
-    background_class=True
-)
+from detmet import compute_metrics
+gt_json_path = "annotations.coco.json"
+pred_json_path = "predictions.json"
+compute_metrics(gt_json_path, pred_json_path)
 ```
-### Key Steps:
-1. Initialize with paths to COCO-format JSON files
-2. Load data into memory
-3. Calculate metrics using default thresholds (IoU=0.5, confidence=0.5)
-4. Export metrics to JSON
-5. Visualize confusion matrix
 
-### Exporting Metrics
-```export_metrics``` Function
+### Input Data
+The input data must be a coco groundtruth json in the format:
+```
+{
+  "info": {
+    "year": int,
+    "version": str,
+    "description": str,
+    "contributor": str,
+    "url": str, // String format
+  },
+  "licenses": [
+    {"id": int, "name": str, "url": str}
+  ],
+  "categories": [
+    {"id": int, "name": str, "supercategory": str}
+  ],
+  "images": [
+    {
+      "id": int,
+      "file_name": str,
+      "height": int,
+      "width": int,
+      "license": int,
+      "coco_url": str
+    }
+  ],
+  "annotations": [
+    {
+      "id": int,
+      "image_id": int,
+      "category_id": int,
+      "bbox": [x, y, width, height],  // Top-left origin
+      "area": float,
+      "iscrowd": 0 or 1
+    }
+  ]
+}
+```
+And an coco prediction json in the format:
+```
+[
+  {
+    "image_id": int,
+    "category_id": int,
+    "bbox": [x, y, width, height],  // Top-left origin
+    "score": float 
+  }
+]
+```
+### Compute Metrics
+#### ```compute_metrics``` Function
 
-Exports metrics dictionary to JSON format with class names instead of IDs.
+Exports metrics dictionary to JSON format, save confusion_matrix.png and pr_curves.png.
 | Argument     | Type  | Default | Description                                      |
 |--------------|-------|---------|--------------------------------------------------|
-| `metrics`    | dict  | -       | Metrics dictionary from `calculate_metrics()`    |
-| `class_names`| list  | -       | List of class names in order of class IDs        |
-| `path`       | str   | '.'     | Output directory                                 |
-| `format`     | str   | 'json'  | Output format (currently only JSON supported)    |
+| `groundtruth_json_path`    | str  | -       | Path to COCO-format ground truth JSON file    |
+| `prediction_json_path`| str  | -       | Path to COCO-format prediction results JSON file        |
+| `iou_thr`       | float   | 0.5     | IoU threshold for true positive matching (0.0-1.0)                                 |
+| `conf_thr`     | float   | 0.5  |  Confidence threshold for predictions (0.0-1.0)    |
+| `exclude_classes`     | list   | None  |  List of class IDs to exclude from evaluation    |
 
-```save_confusion_matrix``` Function
+### Compute Metrics Separately
+To have a most granular control use the class DetectionMetricsManager. It works as an api to the DetectionMetrics class.
+```python
+from detmet import DetectionMetricsManager
+gt_json_path = "annotations.coco.json"
+predictions_json_path = "predictions.json"
+manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
+result = manager.calculate_metrics()
+result.export(format='json', output_path='.')
+result.plot_pr_curves(output_path='./pr.png', show=False)
+result.plot_confusion_matrix(output_path='confusion_matrix.png', background_class=False)
+metrics = result.metrics
+```
 
-Saves confusion matrix as a visual heatmap image.
-| Argument         | Type       | Default                 | Description                                         |
-|------------------|------------|-------------------------|-----------------------------------------------------|
-| `matrix`         | list[list] | -                       | 2D confusion matrix                                 |
-| `class_names`    | list[str]  | -                       | Class names in matrix order                         |
-| `path`           | str        | 'confusion_matrix.png'  | Output file path                                    |
-| `background_class` | bool     | False                   | Whether matrix includes background class            |
+#### ```DetectionMetricsManager``` Class
+
+Manages the calculation of object detection metrics by comparing ground truth and prediction results.
+| Argument     | Type  | Default | Description                                      |
+|--------------|-------|---------|--------------------------------------------------|
+| `groundtruth_json_path`    | str  | -       | Path to COCO-format ground truth JSON file    |
+| `prediction_json_path`| str  | -       | Path to COCO-format prediction results JSON file        |
+
+
+#### ```DetectionMetricsManager.calculate_metrics()``` Function
+
+Calculate detection metrics for the loaded dataset.
+Manages the calculation of object detection metrics by comparing ground truth and prediction results.
+| Argument     | Type  | Default | Description                                      |
+|--------------|-------|---------|--------------------------------------------------|
+| `iou_thr`    | float  | 0.5      | IoU threshold for true positive matching (0.0-1.0)    |
+| `conf_thr`| float  | 0.5       | Confidence threshold for predictions (0.0-1.0)        |
+| `exclude_class`| list  | None       |List of class IDs to exclude from evaluation,        |
+
+Returns:
+```MetricsResult```: Object containing computed metrics and visualization methods
+
+#### ```MetricsResult.export()``` Function
+
+Export metrics to a file in the specified format.
+| Argument     | Type  | Default | Description                                      |
+|--------------|-------|---------|--------------------------------------------------|
+| `format`    | str  | 'json'      |  Output file format (currently only 'json' supported)    |
+| `output_path`| str  | '.'       | Output directory path        |
+
+#### ```MetricsResult.plot_pr_curves()``` Function
+
+Plot and save Precision-Recall curves.
+| Argument     | Type  | Default | Description                                      |
+|--------------|-------|---------|--------------------------------------------------|
+| `output_path`| str  | 'pr_curves.png'       |  Output file path for the PR curve image. If None, returns the figure without saving        |
+| `show`| bool  | False       |   Whether to display the plot interactively     |
+| `dpi`| int  | 100       |   Image resolution in dots per inch       |
+
+#### ```MetricsResult.plot_confusion_matrix()``` Function
+
+Plot and save a confusion matrix visualization.
+| Argument     | Type  | Default | Description                                      |
+|--------------|-------|---------|--------------------------------------------------|
+| `output_path`| str  | 'confusion_matrix.png'       |  Output file path for the confusion matrix image        |
+| `background_class`| bool  | False       |   Whether to include background class in the visualization     |
 
 ## Metric Calculation Methodology
 ### Alignment with COCO/PASCAL VOC Standards

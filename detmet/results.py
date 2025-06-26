@@ -42,14 +42,14 @@ class MetricsResult:
         self.metrics = metrics
         self.labels = labels
 
-    def plot_confusion_matrix(self, path: str = 'confusion_matrix.png', 
+    def plot_confusion_matrix(self, output_path: str = 'confusion_matrix.png', 
                              background_class: bool = False) -> None:
         """
         Plot and save a confusion matrix visualization.
         
         Parameters
         ----------
-        path : str, optional
+        output_path : str, optional
             Output file path for the confusion matrix image, by default 'confusion_matrix.png'
         background_class : bool, optional
             Whether to include background class in the visualization, by default False
@@ -62,7 +62,7 @@ class MetricsResult:
         save_confusion_matrix(
             self.metrics['confusion_matrix_multiclass'], 
             self.labels, 
-            path, 
+            output_path, 
             background_class
         )
 
@@ -101,7 +101,7 @@ class MetricsResult:
             dpi
         )
 
-    def export(self, format: str = 'json', path: str = '.') -> None:
+    def export(self, format: str = 'json', output_path: str = '.') -> None:
         """
         Export metrics to a file in the specified format.
         
@@ -125,4 +125,4 @@ class MetricsResult:
         >>> # Export to specific directory
         >>> result.export(path='output/metrics')
         """
-        export_metrics(self.metrics, path, format)
+        export_metrics(self.metrics, output_path, format)

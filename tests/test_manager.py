@@ -34,7 +34,7 @@ def test_precision_simple():
     """
     gt_json_path = "./tests/jsons/simple/gt_coco.json"
     predictions_json_path = "./tests/jsons/simple/predictions_coco.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
+    manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics()
     result.plot_confusion_matrix('confusion_matrix.png', background_class=False)
     metrics = result.metrics
@@ -62,7 +62,7 @@ def test_precision_medium():
     """
     gt_json_path = "./tests/jsons/medium/gt_coco.json"
     predictions_json_path = "./tests/jsons/medium/predictions_coco.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
+    manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics()
     metrics = result.metrics
     assert metrics['cat']['precision'] == np.float64(1.0)
@@ -98,9 +98,9 @@ def test_export_json():
     """
     gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
     predictions_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=predictions_json_path)
+    manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics(exclude_class=[0])
-    result.export(format='json', path='.')
+    result.export(format='json', output_path='.')
     result.plot_pr_curves(output_path='./pr.png', show=False)
     with open('metrics.json', 'r') as f:
         data = json.load(f)
@@ -145,7 +145,7 @@ def test_invalid_json():
         f.write("invalid json content")
     
     with pytest.raises(ValueError, match="Invalid JSON file"):
-        manager = DetectionMetricsManager(gt_path=invalid_json_path, result_path="./tests/jsons/simple/predictions_coco.json")
+        manager = DetectionMetricsManager(groundtruth_json_path=invalid_json_path, prediction_json_path="./tests/jsons/simple/predictions_coco.json")
 
 def test_invalid_thresholds():
     """
@@ -159,7 +159,7 @@ def test_invalid_thresholds():
     """
     gt_json_path = "./tests/jsons/simple/gt_coco.json"
     pred_json_path = "./tests/jsons/simple/predictions_coco.json"
-    manager = DetectionMetricsManager(gt_path=gt_json_path, result_path=pred_json_path)
+    manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=pred_json_path)
     
     with pytest.raises(ValueError):
         manager.calculate_metrics(iou_thr=1.5)

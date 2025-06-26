@@ -10,7 +10,7 @@ from detmet.utils import convert_numpy
 def save_confusion_matrix(
     matrix: List[List[float]], 
     class_names: List[str], 
-    path: str = 'confusion_matrix.png',
+    output_path: str = 'confusion_matrix.png',
     background_class: bool = False
 ) -> None:
     """
@@ -67,7 +67,7 @@ def save_confusion_matrix(
     plt.ylabel('True')
     plt.title('Confusion Matrix')
     plt.tight_layout()
-    plt.savefig(path, bbox_inches='tight')
+    plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
 def plot_pr_curves(
@@ -173,7 +173,7 @@ def plot_pr_curves(
     
 def export_metrics(
     metrics: dict, 
-    path: str = '.', 
+    output_path: str = '.', 
     format: str = 'json'
 ) -> None:
     """
@@ -220,10 +220,10 @@ def export_metrics(
     metrics_converted = convert_numpy(metrics)
     
     # Create output directory if needed
-    os.makedirs(path, exist_ok=True)
+    os.makedirs(output_path, exist_ok=True)
     
     # Export to JSON
-    with open(os.path.join(path, f"metrics.{format}"), 'w') as f:
+    with open(os.path.join(output_path, f"metrics.{format}"), 'w') as f:
         if format == 'json':
             json.dump(metrics_converted, f, indent=4)
         else:

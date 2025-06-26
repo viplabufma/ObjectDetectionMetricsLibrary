@@ -20,9 +20,9 @@ class DetectionMetricsManager:
     
     Attributes
     ----------
-    gt_path : str
+    groundtruth_json_path : str
         Path to ground truth JSON file (COCO format)
-    result_path : str
+    prediction_json_path : str
         Path to prediction results JSON file (COCO predictions format)
     gt_coco : COCO
         COCO object containing ground truth data
@@ -40,30 +40,30 @@ class DetectionMetricsManager:
     >>> metrics.plot_confusion_matrix('confusion.png')
     """
     
-    def __init__(self, gt_path: str, result_path: str):
+    def __init__(self, groundtruth_json_path: str, prediction_json_path: str):
         """
         Initialize DetectionMetricsManager with ground truth and prediction paths.
         
         Parameters
         ----------
-        gt_path : str
+        groundtruth_json_path : str
             Path to COCO-format ground truth JSON file
-        result_path : str
+        prediction_json_path : str
             Path to COCO-format prediction results JSON file
         """
-        self._initialize(gt_path, result_path)
+        self._initialize(groundtruth_json_path, prediction_json_path)
         self.labels = []
 
-    def _initialize(self, gt_path: str, result_path: str) -> None:
+    def _initialize(self, groundtruth_json_path: str, prediction_json_path: str) -> None:
         """Initialize paths and empty data containers"""
-        self.gt_path = gt_path
-        self.result_path = result_path
+        self.gt_path = groundtruth_json_path
+        self.pred_path = prediction_json_path
         self.gt_coco: Optional[COCO] = None
         self.dt_coco: Optional[COCO] = None
         self.names: Dict[int, str] = {}
         self._load_data()
 
-    def update_data(self, gt_path: str, result_path: str) -> None:
+    def update_data(self, groundtruth_json_path: str, prediction_json_path: str) -> None:
         """
         Update data sources and reload all data.
         
@@ -74,7 +74,7 @@ class DetectionMetricsManager:
         result_path : str
             New path to prediction results JSON file
         """
-        self._initialize(gt_path, result_path)
+        self._initialize(groundtruth_json_path, prediction_json_path)
         self._load_data()
 
     def _load_data(self) -> None:
@@ -88,7 +88,7 @@ class DetectionMetricsManager:
         """Load files using COCO API and prepare data"""
         try:
             self.gt_coco = COCO(self.gt_path)
-            self.dt_coco = self.gt_coco.loadRes(self.result_path)
+            self.dt_coco = self.gt_coco.loadRes(self.pred_path)
         except Exception as e:
             raise ValueError("Invalid JSON file") from e
         
@@ -247,7 +247,7 @@ def compute_metrics(groundtruth_json_path: str, prediction_json_path: str,
     """
     check_normalized(iou_thr)
     check_normalized(conf_thr)
-    manager = DetectionMetricsManager(gt_path=groundtruth_json_path,result_path=prediction_json_path)
+    manager = DetectionMetricsManager(groundtruth_json_path=groundtruth_json_path,prediction_json_path=prediction_json_path)
     metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_class=exclude_classes)
     metrics.plot_confusion_matrix('confusion_matrix.png')
     metrics.export()
