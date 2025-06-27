@@ -99,7 +99,7 @@ def test_export_json():
     gt_json_path = "./tests/jsons/real_case/_annotations.coco.json"
     predictions_json_path = "./tests/jsons/real_case/tood_predicts_bbox.bbox.json"
     manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
-    result = manager.calculate_metrics(exclude_class=[0])
+    result = manager.calculate_metrics(exclude_classes=[0])
     result.export(format='json', output_path='.')
     result.plot_pr_curves(output_path='./pr.png', show=False)
     with open('metrics.json', 'r') as f:
