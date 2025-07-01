@@ -166,3 +166,32 @@ def test_invalid_thresholds():
     
     with pytest.raises(ValueError):
         manager.calculate_metrics(conf_thr=-0.1)
+
+def test_update_data():
+    """
+    Test updating data sources after initial initialization.
+    
+    Verifies:
+    - The update_data method correctly reloads new data
+    - Metrics are recalculated based on the new dataset
+    - The internal state is updated to reflect new data paths
+    """
+    # Initial setup with simple dataset
+    gt_json_simple = "./tests/jsons/simple/gt_coco.json"
+    pred_json_simple = "./tests/jsons/simple/predictions_coco.json"
+    manager = DetectionMetricsManager(groundtruth_json_path=gt_json_simple, 
+                                     prediction_json_path=pred_json_simple)
+    
+    # Calculate metrics for simple dataset
+    result_simple = manager.calculate_metrics()
+    assert result_simple.metrics['global']['support'] == 3
+    
+    # Update to medium dataset
+    gt_json_medium = "./tests/jsons/medium/gt_coco.json"
+    pred_json_medium = "./tests/jsons/medium/predictions_coco.json"
+    manager.update_data(groundtruth_json_path=gt_json_medium, 
+                       prediction_json_path=pred_json_medium)
+    
+    # Calculate metrics for medium dataset
+    result_medium = manager.calculate_metrics()
+    assert result_medium.metrics['global']['support'] == 7

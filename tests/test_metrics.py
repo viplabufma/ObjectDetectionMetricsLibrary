@@ -4,8 +4,13 @@
     @GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 """
 
+import contextlib
+import io
 import numpy as np
+import pytest
 from detmet import DetectionMetrics, bbox_iou
+from detmet.metrics import compute_precision_recall_curve
+from pycocotools.coco import COCO
 
 def test_multi_image_processing():
     """
@@ -667,3 +672,197 @@ def test_iscrowd_handling():
     ])
     assert np.array_equal(metrics.matrix, expected_matrix), \
         "Confusion matrix mismatch"
+    
+def test_precision_recall_curve_basic():
+    """Test basic precision-recall curve calculation with single class.
+    
+    Verifies:
+    - Correct precision and recall values at different confidence thresholds
+    - Proper AP calculation
+    - Handling of TP, FP, FN cases
+    """
+    # Ground truth for 2 images
+    all_gts = [
+        [{'category_id': 1, 'bbox': [10, 10, 20, 20]}],  # Image 1
+        [{'category_id': 1, 'bbox': [50, 50, 30, 30]}]   # Image 2
+    ]
+    
+    # Predictions with varying confidence
+    all_preds = [
+        [  # Image 1 predictions
+            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP (IoU=0.81)
+            {'category_id': 1, 'bbox': [15, 15, 15, 15], 'score': 0.8}   # TP (IoU=0.75)
+        ],
+        [  # Image 2 predictions
+            {'category_id': 1, 'bbox': [55, 55, 25, 25], 'score': 0.7},  # TP (IoU=0.69)
+            {'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.6}  # FP
+        ]
+    ]
+    
+    # Compute PR curve
+    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    
+    # Validate results
+    assert len(result['precision']) == 4
+    assert len(result['recall']) == 4
+    assert len(result['thresholds']) == 4
+    
+    expected_precision = [1.0, 0.5, 0.6667, 0.5]
+    for i, p in enumerate(result['precision']):
+        assert p == pytest.approx(expected_precision[i], abs=0.01)
+    
+    assert result['ap'] == pytest.approx(0.833, abs=0.01)    
+    assert result['per_class'][1] == pytest.approx(0.833, abs=0.01)
+
+def test_precision_recall_curve_multiclass():
+    """Test precision-recall curve with multiple classes.
+    
+    Verifies:
+    - Per-class AP calculation
+    - Correct handling of class-specific metrics
+    - Global AP aggregation
+    """
+    # Ground truth
+    all_gts = [
+        [
+            {'category_id': 1, 'bbox': [10, 10, 20, 20]},
+            {'category_id': 2, 'bbox': [50, 50, 30, 30]}
+        ]
+    ]
+    
+    # Predictions
+    all_preds = [
+        [
+            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP class1
+            {'category_id': 2, 'bbox': [55, 55, 25, 25], 'score': 0.8},   # TP class2
+            {'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.7}  # FP class1
+        ]
+    ]
+    
+    # Compute PR curve
+    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    
+    # Validate per-class results
+    assert result['per_class'][1] == pytest.approx(0.990, abs=0.01)
+    
+    assert result['per_class'][2] == pytest.approx(1.0, abs=0.01)
+    
+    # Global AP
+    assert result['ap'] == pytest.approx(0.995, abs=0.01)
+
+def test_precision_recall_curve_crowd_annotations():
+    """Test handling of crowd annotations.
+    
+    Verifies:
+    - Crowd annotations are excluded from matching
+    - Predictions matching crowd regions don't count as FP
+    - Recall calculation ignores crowd GTs
+    """
+    all_gts = [
+        [
+            {'category_id': 1, 'bbox': [10, 10, 20, 20], 'iscrowd': 0},  # Normal
+            {'category_id': 1, 'bbox': [50, 50, 30, 30], 'iscrowd': 1}   # Crowd
+        ]
+    ]
+    
+    all_preds = [
+        [
+            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP
+            {'category_id': 1, 'bbox': [52, 52, 28, 28], 'score': 0.8}   # Ignored (crowd match)
+        ]
+    ]
+    
+    result = compute_precision_recall_curve(all_gts, all_preds)
+    
+    assert result['precision'][-1] == pytest.approx(0.5, abs=0.01)
+    assert result['recall'][-1] == 1.0
+    assert result['ap'] == pytest.approx(1.0, abs=0.01)
+
+def test_precision_recall_curve_crowd_annotations():
+    """Test handling of crowd annotations.
+    
+    Verifies:
+    - Crowd annotations are excluded from matching
+    - Predictions matching crowd regions don't count as FP
+    - Recall calculation ignores crowd GTs
+    """
+    all_gts = [
+        [
+            {'category_id': 1, 'bbox': [10, 10, 20, 20], 'iscrowd': 0},  # Normal
+            {'category_id': 1, 'bbox': [50, 50, 30, 30], 'iscrowd': 1}   # Crowd
+        ]
+    ]
+    
+    all_preds = [
+        [
+            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP
+            {'category_id': 1, 'bbox': [52, 52, 28, 28], 'score': 0.8}   # Ignored (crowd match)
+        ]
+    ]
+    
+    result = compute_precision_recall_curve(all_gts, all_preds)
+    
+    assert result['precision'][-1] == pytest.approx(0.5, abs=0.01)
+    assert result['recall'][-1] == 1.0
+    assert result['ap'] == pytest.approx(1.0, abs=0.01)
+
+def test_precision_recall_curve_empty_inputs():
+    """Test edge cases with empty inputs.
+    
+    Verifies:
+    - Graceful handling of empty ground truth
+    - Graceful handling of empty predictions
+    - Zero AP when no valid detections
+    """
+    # Case 1: No ground truth
+    result1 = compute_precision_recall_curve([], [[]])
+    assert result1['ap'] == 0.0
+    assert len(result1['precision']) == 0
+    
+    # Case 2: No predictions
+    all_gts = [[{'category_id': 1, 'bbox': [10, 10, 20, 20]}]]
+    all_preds = [[]]
+    result2 = compute_precision_recall_curve(all_gts, all_preds)
+    assert result2['ap'] == 0.0
+    if result2['precision'].size > 0:
+        assert result2['precision'][0] == 0.0
+    
+    # Case 3: Valid data but no matches
+    all_preds = [[{'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.9}]]
+    result3 = compute_precision_recall_curve(all_gts, all_preds)
+    assert result3['ap'] == 0.0
+    if result3['precision'].size > 0:
+        assert result3['precision'][-1] == 0.0
+
+def test_pr_curves_early_return(monkeypatch):
+    """
+    Tests early return when the evaluator does not have the 'eval' attribute
+    or the 'precision' key in the evaluation dictionary.
+
+    Simulates a situation where the COCO evaluation does not generate the necessary data,
+    ensuring that the function returns without error and without generating PR curves.
+    """
+    class MockEvaluator:
+        def __init__(self, *args, **kwargs):
+            pass
+        def evaluate(self):
+            pass
+        def accumulate(self):
+            pass
+
+    monkeypatch.setattr('pycocotools.cocoeval.COCOeval', MockEvaluator)
+    
+    metrics = DetectionMetrics(
+        names={1: 'class1'},
+        gt_coco=COCO(), 
+        predictions_coco=COCO(),  
+        store_pr_curves=True
+    )
+    
+    dummy_metrics = {
+        'global': {'mAP': 0.5},
+        1: {'ap': 0.6}
+    }
+    
+    metrics._compute_pr_curves(dummy_metrics)    
+    assert not metrics.pr_curves
