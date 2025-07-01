@@ -976,9 +976,6 @@ class DetectionMetrics:
                      reverse=True)
 
         for j in order:
-            if pred_matched[j]:
-                continue
-
             # Vectorized matching
             candidate_ious = iou_matrix[:, j].copy()
             candidate_ious[gt_matched] = -1.0
@@ -1239,10 +1236,6 @@ class DetectionMetrics:
                 evaluator.params.catIds = valid_cat_ids
                 evaluator.evaluate()
                 evaluator.accumulate()
-
-                # Handle empty evaluator stats
-                if not hasattr(evaluator, 'eval') or 'precision' not in evaluator.eval:
-                    return
 
                 # Parameters for curve extraction
                 aind = next(i for i, aRng in enumerate(evaluator.params.areaRngLbl)

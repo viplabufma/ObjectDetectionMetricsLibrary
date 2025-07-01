@@ -3,9 +3,6 @@
     @Organization: Viplab - UFMA
     @GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 """
-
-import contextlib
-import io
 import numpy as np
 import pytest
 from detmet import DetectionMetrics, bbox_iou
@@ -866,3 +863,42 @@ def test_pr_curves_early_return(monkeypatch):
     
     metrics._compute_pr_curves(dummy_metrics)    
     assert not metrics.pr_curves
+
+def test_precision_recall_curve_class_without_ground_truth():
+    """Test per-class AP calculation for    classes with no ground truth instances.
+    
+    Verifies:
+    - Classes with 0 ground truths receive AP=0.0
+    - Does not affect AP calculation for other classes
+    - Proper handling of 'per_class' dictionary entries
+    """
+    # Ground truth - class 1 only
+    all_gts = [
+        [{'category_id': 1, 'bbox': [10, 10, 20, 20]}],  # Image 1
+        [{'category_id': 1, 'bbox': [50, 50, 30, 30]}]   # Image 2
+    ]
+    
+    # Predictions include class 2 (no ground truth) and class 1
+    all_preds = [
+        [  # Image 1 predictions
+            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP class1
+            {'category_id': 2, 'bbox': [100, 100, 30, 30], 'score': 0.8}  # FP class2
+        ],
+        [  # Image 2 predictions
+            {'category_id': 1, 'bbox': [52, 52, 28, 28], 'score': 0.7},  # TP class1
+            {'category_id': 2, 'bbox': [150, 150, 30, 30], 'score': 0.6}  # FP class2
+        ]
+    ]
+    
+    # Compute PR curve
+    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    
+    # Validate per-class results
+    assert 1 in result['per_class']
+    assert 2 in result['per_class']
+    
+    # Class 1 should have normal AP
+    assert result['per_class'][1] > 0
+    
+    # Class 2 (no ground truth) must have AP=0.0
+    assert result['per_class'][2] == 0.0
