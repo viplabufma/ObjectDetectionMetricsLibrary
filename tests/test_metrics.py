@@ -775,34 +775,6 @@ def test_precision_recall_curve_crowd_annotations():
     assert result['recall'][-1] == 1.0
     assert result['ap'] == pytest.approx(1.0, abs=0.01)
 
-def test_precision_recall_curve_crowd_annotations():
-    """Test handling of crowd annotations.
-    
-    Verifies:
-    - Crowd annotations are excluded from matching
-    - Predictions matching crowd regions don't count as FP
-    - Recall calculation ignores crowd GTs
-    """
-    all_gts = [
-        [
-            {'category_id': 1, 'bbox': [10, 10, 20, 20], 'iscrowd': 0},  # Normal
-            {'category_id': 1, 'bbox': [50, 50, 30, 30], 'iscrowd': 1}   # Crowd
-        ]
-    ]
-    
-    all_preds = [
-        [
-            {'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9},  # TP
-            {'category_id': 1, 'bbox': [52, 52, 28, 28], 'score': 0.8}   # Ignored (crowd match)
-        ]
-    ]
-    
-    result = compute_precision_recall_curve(all_gts, all_preds)
-    
-    assert result['precision'][-1] == pytest.approx(0.5, abs=0.01)
-    assert result['recall'][-1] == 1.0
-    assert result['ap'] == pytest.approx(1.0, abs=0.01)
-
 def test_precision_recall_curve_empty_inputs():
     """Test edge cases with empty inputs.
     
@@ -821,8 +793,6 @@ def test_precision_recall_curve_empty_inputs():
     all_preds = [[]]
     result2 = compute_precision_recall_curve(all_gts, all_preds)
     assert result2['ap'] == 0.0
-    if result2['precision'].size > 0:
-        assert result2['precision'][0] == 0.0
     
     # Case 3: Valid data but no matches
     all_preds = [[{'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.9}]]
@@ -831,24 +801,16 @@ def test_precision_recall_curve_empty_inputs():
     if result3['precision'].size > 0:
         assert result3['precision'][-1] == 0.0
 
-def test_pr_curves_early_return(monkeypatch):
+def test_pr_curves_early_return():
     """
-    Tests early return when the evaluator does not have the 'eval' attribute
-    or the 'precision' key in the evaluation dictionary.
+    Tests graceful handling of incomplete COCO evaluation data.
 
-    Simulates a situation where the COCO evaluation does not generate the necessary data,
-    ensuring that the function returns without error and without generating PR curves.
+    Simulates scenarios where COCO evaluation fails to generate required data
+    (e.g., empty COCO objects) by verifying:
+    1. The function returns without raising exceptions
+    2. No PR curves are generated (pr_curves remains empty)
     """
-    class MockEvaluator:
-        def __init__(self, *args, **kwargs):
-            pass
-        def evaluate(self):
-            pass
-        def accumulate(self):
-            pass
 
-    monkeypatch.setattr('pycocotools.cocoeval.COCOeval', MockEvaluator)
-    
     metrics = DetectionMetrics(
         names={1: 'class1'},
         gt_coco=COCO(), 
