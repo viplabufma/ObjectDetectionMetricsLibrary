@@ -202,3 +202,104 @@ def check_normalized(value: float, param_name: str = "value") -> None:
         raise ValueError(
             f"'{param_name}' must be between 0.0 and 1.0 (got: {value})"
         )
+
+def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
+    """
+    Compute IoU between multiple ground truth and predicted bounding boxes.
+
+    Parameters
+    ----------
+    gt_boxes : np.ndarray
+        [N, 4] array of ground truth boxes as [x1, y1, x2, y2]
+    pred_boxes : np.ndarray
+        [M, 4] array of predicted boxes as [x1, y1, x2, y2]
+
+    Returns
+    -------
+    np.ndarray
+        [N, M] matrix of IoU values
+
+    Notes
+    -----
+    - Handles empty input arrays by returning a zero matrix
+    - Uses broadcasting for efficient computation
+    - Returns 0.0 for boxes with no overlap
+
+    Examples
+    --------
+    >>> gt = np.array([[10, 10, 20, 20]])
+    >>> pred = np.array([[15, 15, 25, 25]])
+    >>> iou_matrix = vectorized_bbox_iou(gt, pred)
+    """
+    # Ensure arrays are 2D: (num_boxes, 4)
+    gt_boxes = gt_boxes.reshape(-1, 4)
+    pred_boxes = pred_boxes.reshape(-1, 4)
+
+    N = gt_boxes.shape[0]
+    M = pred_boxes.shape[0]
+
+    # Return zero matrix if no boxes
+    if N == 0 or M == 0:
+        return np.zeros((N, M))
+
+    # Expand dimensions for broadcasting
+    gt_boxes = gt_boxes[:, None, :]  # shape (N, 1, 4)
+    pred_boxes = pred_boxes[None, :, :]  # shape (1, M, 4)
+
+    # Calculate intersection coordinates
+    x1_inter = np.maximum(gt_boxes[..., 0], pred_boxes[..., 0])
+    y1_inter = np.maximum(gt_boxes[..., 1], pred_boxes[..., 1])
+    x2_inter = np.minimum(gt_boxes[..., 2], pred_boxes[..., 2])
+    y2_inter = np.minimum(gt_boxes[..., 3], pred_boxes[..., 3])
+
+    # Calculate intersection area
+    inter_width = np.maximum(0, x2_inter - x1_inter)
+    inter_height = np.maximum(0, y2_inter - y1_inter)
+    inter_area = inter_width * inter_height
+
+    # Calculate union area
+    gt_area = (gt_boxes[..., 2] - gt_boxes[..., 0]) * (gt_boxes[..., 3] - gt_boxes[..., 1])
+    pred_area = (pred_boxes[..., 2] - pred_boxes[..., 0]) * (pred_boxes[..., 3] - pred_boxes[..., 1])
+    union_area = gt_area + pred_area - inter_area
+
+    return inter_area / np.maximum(union_area, 1e-7)
+
+def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xyxy: bool = True) -> np.ndarray:
+    """
+    Compute IoU matrix between ground truth and predicted annotations.
+
+    Parameters
+    ----------
+    gt_anns : List[dict]
+        List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
+    pred_anns : List[dict]
+        List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
+    convert_to_xyxy : bool, optional
+        If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
+        are already in [x1, y1, x2, y2], by default True
+
+    Returns
+    -------
+    np.ndarray
+        IoU matrix of shape (num_gt, num_pred)
+
+    Examples
+    --------
+    >>> gt = [{'bbox': [10, 10, 20, 20]}]
+    >>> pred = [{'bbox': [12, 12, 18, 18]}]
+    >>> iou_matrix = compute_iou_matrix(gt, pred)
+    """
+    if not gt_anns and not pred_anns:
+        return np.zeros((0, 0))
+
+    gt_boxes = np.array([g['bbox'] for g in gt_anns], dtype=np.float32)
+    pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
+
+    if convert_to_xyxy and gt_boxes.size > 0:
+        gt_boxes[:, 2] += gt_boxes[:, 0]  # x2 = x + w
+        gt_boxes[:, 3] += gt_boxes[:, 1]  # y2 = y + h
+    if convert_to_xyxy and pred_boxes.size > 0:
+        pred_boxes[:, 2] += pred_boxes[:, 0]  # x2 = x + w
+        pred_boxes[:, 3] += pred_boxes[:, 1]  # y2 = y + h
+
+    return vectorized_bbox_iou(gt_boxes, pred_boxes)

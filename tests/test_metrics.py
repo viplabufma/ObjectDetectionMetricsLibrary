@@ -5,8 +5,9 @@
 """
 import numpy as np
 import pytest
-from detmet import DetectionMetrics, bbox_iou
-from detmet.metrics import compute_precision_recall_curve
+from detmet.metrics import DetectionMetrics
+from detmet.metrics import AnnotationsConfig, ThresholdsConfig, PrecisionRecallConfig
+from detmet.metrics.metrics import precision_recall_curve, bbox_iou
 from pycocotools.coco import COCO
 
 def test_multi_image_processing():
@@ -33,7 +34,9 @@ def test_multi_image_processing():
     ]
     
     # Process images sequentially
-    metrics = DetectionMetrics(names={1: 'class1', 2: 'class2', 3: 'class3'})
+    metrics = DetectionMetrics(
+            AnnotationsConfig(names={1: 'class1', 2: 'class2', 3: 'class3'})
+        )
     metrics.process_image(gt_anns1, pred_anns1)
     metrics.process_image(gt_anns2, pred_anns2)
     
@@ -78,9 +81,8 @@ def test_single_image_basic():
         {'category_id': 2, 'bbox': [52, 52, 28, 28], 'score': 0.8}
     ]
     
-    metrics = DetectionMetrics(names={1: 'person', 2: 'car'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person', 2: 'car'}))
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # All classes should have maximum precision and recall
@@ -108,9 +110,10 @@ def test_no_predictions():
     ]
     pred_anns = []
     
-    metrics = DetectionMetrics(names={1: 'person', 2: 'car'})
+    metrics = DetectionMetrics(
+        AnnotationsConfig(names={1: 'person', 2: 'car'})
+    )
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # No predictions: precision undefined (treated as 0), recall = 0
@@ -136,9 +139,8 @@ def test_no_ground_truth():
         {'category_id': 2, 'bbox': [52, 52, 28, 28], 'score': 0.8}
     ]
     
-    metrics = DetectionMetrics(names={1: 'person', 2: 'car'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person', 2: 'car'}))
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # No GTs: all predictions are FP
@@ -164,9 +166,9 @@ def test_confidence_threshold():
         {'category_id': 1, 'bbox': [15, 15, 15, 15], 'score': 0.3}   # Below threshold
     ]
     
-    metrics = DetectionMetrics(names={1: 'person'}, conf_thr=0.5)
+
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person'}), ThresholdsConfig(conf_thr=0.5))
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # Only 1 valid prediction should be considered (TP)
@@ -187,9 +189,8 @@ def test_iou_threshold():
         {'category_id': 1, 'bbox': [30, 30, 20, 20], 'score': 0.9}  # Low IoU
     ]
     
-    metrics = DetectionMetrics(names={1: 'person'}, iou_thr=0.5)
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person'}), ThresholdsConfig(iou_thr=0.5))
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # Low IoU: FP (unmatched prediction) and FN (undetected GT)
@@ -209,7 +210,7 @@ def test_class_mismatch():
     gt_anns = [{'category_id': 1, 'bbox': [10, 10, 20, 20]}]
     pred_anns = [{'category_id': 2, 'bbox': [12, 12, 18, 18], 'score': 0.9}]
     
-    metrics = DetectionMetrics(names={1: 'person', 2: 'car'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person', 2: 'car'}))
     metrics.process_image(gt_anns, pred_anns)
     
     result = metrics.compute_metrics()
@@ -236,9 +237,8 @@ def test_multiple_predictions_same_gt():
         {'category_id': 1, 'bbox': [11, 11, 19, 19], 'score': 0.8}
     ]
     
-    metrics = DetectionMetrics(names={1: 'person'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person'}))
     metrics.process_image(gt_anns, pred_anns)
-    
     result = metrics.compute_metrics()
     
     # 1 TP + 1 FP = precision 0.5, recall 1.0
@@ -278,9 +278,8 @@ def test_results_dict_property():
     gt_anns = [{'category_id': 1, 'bbox': [10, 10, 20, 20]}]
     pred_anns = [{'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9}]
     
-    metrics = DetectionMetrics(names={1: 'person', 2: 'car'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person', 2: 'car'}))
     metrics.process_image(gt_anns, pred_anns)
-    
     results = metrics.results_dict
     
     # Verify expected keys for each class
@@ -303,19 +302,19 @@ def test_reset_functionality():
     gt_anns = [{'category_id': 1, 'bbox': [10, 10, 20, 20]}]
     pred_anns = [{'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9}]
     
-    metrics = DetectionMetrics(names={1: 'person'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person'}))
     metrics.process_image(gt_anns, pred_anns)
     
     # Initial populated state
     assert metrics.matrix is not None
-    assert len(metrics.stats) > 0
+    assert len(metrics.state.stats) > 0
     
     # Reset
     metrics.reset()
     
     # Post-reset state
     assert metrics.matrix is None
-    assert len(metrics.stats) == 0
+    assert len(metrics.state.stats) == 0
     assert len(metrics.class_map) == 0  # Mapping should be preserved?
 
 def test_edge_case_empty_inputs():
@@ -326,7 +325,8 @@ def test_edge_case_empty_inputs():
     - Support should be 0
     - Processing shouldn't generate errors
     """
-    metrics = DetectionMetrics(names={1: 'person'})
+
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'person'}))
     metrics.process_image([], [])
     
     result = metrics.compute_metrics()
@@ -385,7 +385,7 @@ def test_three_images_metrics():
     ]
     
     # Process all 3 images
-    metrics = DetectionMetrics(names={1: 'class1', 2: 'class2', 3: 'class3'})
+    metrics = DetectionMetrics(AnnotationsConfig(names={1: 'class1', 2: 'class2', 3: 'class3'}))
     metrics.process_image(gt_anns1, pred_anns1)
     metrics.process_image(gt_anns2, pred_anns2)
     metrics.process_image(gt_anns3, pred_anns3)
@@ -475,8 +475,10 @@ def test_map_calculation():
         * Duplicate detections
         * Confidence variations
     """
-    names = {0: 'person', 1: 'car', 2: 'bike'}
-    metrics = DetectionMetrics(names=names, iou_thr=0.5, conf_thr=0.1)
+    metrics = DetectionMetrics(
+        AnnotationsConfig(names = {0: 'person', 1: 'car', 2: 'bike'}),
+        ThresholdsConfig(iou_thr=0.5, conf_thr=0.1)
+        )
     
     # Image 1: 3 TPs (all classes)
     gt_anns_1 = [
@@ -544,8 +546,11 @@ def test_classification_errors_in_confusion_matrix():
         * Class2: TP + FP (from error)
         * Class3: Traditional FP
     """
-    names = {1: 'class1', 2: 'class2', 3: 'class3'}
-    metrics = DetectionMetrics(names=names, iou_thr=0.5, conf_thr=0.5)
+    
+    metrics = DetectionMetrics(
+        AnnotationsConfig(names = {1: 'class1', 2: 'class2', 3: 'class3'}),
+        ThresholdsConfig(iou_thr=0.5, conf_thr=0.5)
+        )
     
     gt_anns = [
         {'category_id': 1, 'bbox': [10, 10, 20, 20]},
@@ -636,9 +641,8 @@ def test_iscrowd_handling():
     ]
     
     metrics = DetectionMetrics(
-        names={1: 'class1', 2: 'class2', 3: 'class3'},
-        iou_thr=0.5,
-        conf_thr=0.5
+        AnnotationsConfig(names={1: 'class1', 2: 'class2', 3: 'class3'}),
+        ThresholdsConfig(iou_thr=0.5, conf_thr=0.5)
     )
     metrics.process_image(gt_anns, pred_anns)
     results = metrics.compute_metrics()
@@ -697,7 +701,7 @@ def test_precision_recall_curve_basic():
     ]
     
     # Compute PR curve
-    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    result = precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
     
     # Validate results
     assert len(result['precision']) == 4
@@ -737,7 +741,7 @@ def test_precision_recall_curve_multiclass():
     ]
     
     # Compute PR curve
-    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    result = precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
     
     # Validate per-class results
     assert result['per_class'][1] == pytest.approx(0.990, abs=0.01)
@@ -769,7 +773,7 @@ def test_precision_recall_curve_crowd_annotations():
         ]
     ]
     
-    result = compute_precision_recall_curve(all_gts, all_preds)
+    result = precision_recall_curve(all_gts, all_preds)
     
     assert result['precision'][-1] == pytest.approx(0.5, abs=0.01)
     assert result['recall'][-1] == 1.0
@@ -784,19 +788,19 @@ def test_precision_recall_curve_empty_inputs():
     - Zero AP when no valid detections
     """
     # Case 1: No ground truth
-    result1 = compute_precision_recall_curve([], [[]])
+    result1 = precision_recall_curve([], [[]])
     assert result1['ap'] == 0.0
     assert len(result1['precision']) == 0
     
     # Case 2: No predictions
     all_gts = [[{'category_id': 1, 'bbox': [10, 10, 20, 20]}]]
     all_preds = [[]]
-    result2 = compute_precision_recall_curve(all_gts, all_preds)
+    result2 = precision_recall_curve(all_gts, all_preds)
     assert result2['ap'] == 0.0
     
     # Case 3: Valid data but no matches
     all_preds = [[{'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.9}]]
-    result3 = compute_precision_recall_curve(all_gts, all_preds)
+    result3 = precision_recall_curve(all_gts, all_preds)
     assert result3['ap'] == 0.0
     if result3['precision'].size > 0:
         assert result3['precision'][-1] == 0.0
@@ -810,12 +814,10 @@ def test_pr_curves_early_return():
     1. The function returns without raising exceptions
     2. No PR curves are generated (pr_curves remains empty)
     """
-
+    
     metrics = DetectionMetrics(
-        names={1: 'class1'},
-        gt_coco=COCO(), 
-        predictions_coco=COCO(),  
-        store_pr_curves=True
+        AnnotationsConfig(names={1: 'class1'}, gt_coco=COCO(), predictions_coco=COCO()),
+        PrecisionRecallConfig(store_pr_curves=True)
     )
     
     dummy_metrics = {
@@ -853,7 +855,7 @@ def test_precision_recall_curve_class_without_ground_truth():
     ]
     
     # Compute PR curve
-    result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    result = precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
     
     # Validate per-class results
     assert 1 in result['per_class']

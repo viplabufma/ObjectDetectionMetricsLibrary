@@ -5,8 +5,9 @@ GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 """
 from pycocotools.coco import COCO
 from typing import Dict, List, Tuple, Optional
+from .metrics.DetectionMetrics import DetectionMetrics
+from .metrics import AnnotationsConfig, ThresholdsConfig, PrecisionRecallConfig
 from .results import MetricsResult
-from .metrics import DetectionMetrics
 from .utils import check_normalized, map_class_keys_recursive
 import contextlib
 import io
@@ -173,14 +174,20 @@ class DetectionMetricsManager:
         check_normalized(iou_thr)
         check_normalized(conf_thr)
         metrics_calculator = DetectionMetrics(
-            names=self.names,
-            iou_thr=iou_thr,
-            conf_thr=conf_thr,
-            gt_coco=self.gt_coco,
-            predictions_coco=self.dt_coco,
-            exclude_classes=exclude_classes,
-            store_pr_data=True,
-            store_pr_curves=True
+            AnnotationsConfig(
+                names=self.names,
+                gt_coco=self.gt_coco,
+                predictions_coco=self.dt_coco,
+                exclude_classes=exclude_classes
+            ),
+            ThresholdsConfig(
+                iou_thr=iou_thr,
+                conf_thr=conf_thr
+            ),
+            PrecisionRecallConfig(
+                store_pr_curves=True,
+                store_pr_data=True
+            )
         )
         self._process_all_images(metrics_calculator)
         labels = metrics_calculator.get_confusion_matrix_labels()
@@ -247,6 +254,7 @@ def compute_metrics(groundtruth_json_path: str, prediction_json_path: str,
     """
     check_normalized(iou_thr)
     check_normalized(conf_thr)
+    
     manager = DetectionMetricsManager(groundtruth_json_path=groundtruth_json_path,prediction_json_path=prediction_json_path)
     metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_classes=exclude_classes)
     metrics.plot_confusion_matrix('confusion_matrix.png')

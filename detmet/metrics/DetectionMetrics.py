@@ -9,479 +9,89 @@ Description:
     including precision, recall, F1-score, confusion matrices (binary and multiclass),
     COCO-style mean Average Precision (mAP) and Precision x Recall curves.
 '''
+from detmet.metrics import bbox_iou, precision_recall_f1
+from detmet.utils import compute_iou_matrix
 import numpy as np
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import contextlib
 import io
 
-def bbox_iou(box1: list, box2: list) -> float:
-    """
-    Calculate Intersection over Union (IoU) between two COCO-format bounding boxes.
 
+class PrecisionRecallConfig:
+    """
+    Configuration for Precision-Recall curve computation and storage.
+    
     Parameters
     ----------
-    box1 : list[float]
-        [x, y, width, height] of first bounding box
-    box2 : list[float]
-        [x, y, width, height] of second bounding box
-
-    Returns
-    -------
-    float
-        IoU value between 0.0 and 1.0
-
-    Examples
-    --------
-    >>> box1 = [10, 10, 20, 20]
-    >>> box2 = [15, 15, 20, 20]
-    >>> iou = bbox_iou(box1, box2)
+    store_pr_data : bool, optional
+        Whether to store raw data for PR curve computation, by default False
+    store_pr_curves : bool, optional
+        Whether to compute and store PR curves, by default True
     """
-    x1, y1, w1, h1 = box1
-    x2, y2, w2, h2 = box2
-    # Calculate corner coordinates
-    x1_max, y1_max = x1 + w1, y1 + h1
-    x2_max, y2_max = x2 + w2, y2 + h2
-    # Calculate intersection coordinates
-    ix1, iy1 = max(x1, x2), max(y1, y2)
-    ix2, iy2 = min(x1_max, x2_max), min(y1_max, y2_max)
-    # Calculate intersection area
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    union = w1 * h1 + w2 * h2 - inter
-    return inter / union if union > 0 else 0.0
+    
+    def __init__(self, store_pr_data: bool = False, store_pr_curves: bool = True):
+        self.store_pr_data = store_pr_data
+        self.store_pr_curves = store_pr_curves
 
 
-def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
+class AnnotationsConfig:
     """
-    Compute IoU between multiple ground truth and predicted bounding boxes.
-
-    Parameters
-    ----------
-    gt_boxes : np.ndarray
-        [N, 4] array of ground truth boxes as [x1, y1, x2, y2]
-    pred_boxes : np.ndarray
-        [M, 4] array of predicted boxes as [x1, y1, x2, y2]
-
-    Returns
-    -------
-    np.ndarray
-        [N, M] matrix of IoU values
-
-    Notes
-    -----
-    - Handles empty input arrays by returning a zero matrix
-    - Uses broadcasting for efficient computation
-    - Returns 0.0 for boxes with no overlap
-
-    Examples
-    --------
-    >>> gt = np.array([[10, 10, 20, 20]])
-    >>> pred = np.array([[15, 15, 25, 25]])
-    >>> iou_matrix = vectorized_bbox_iou(gt, pred)
-    """
-    # Ensure arrays are 2D: (num_boxes, 4)
-    gt_boxes = gt_boxes.reshape(-1, 4)
-    pred_boxes = pred_boxes.reshape(-1, 4)
-
-    N = gt_boxes.shape[0]
-    M = pred_boxes.shape[0]
-
-    # Return zero matrix if no boxes
-    if N == 0 or M == 0:
-        return np.zeros((N, M))
-
-    # Expand dimensions for broadcasting
-    gt_boxes = gt_boxes[:, None, :]  # shape (N, 1, 4)
-    pred_boxes = pred_boxes[None, :, :]  # shape (1, M, 4)
-
-    # Calculate intersection coordinates
-    x1_inter = np.maximum(gt_boxes[..., 0], pred_boxes[..., 0])
-    y1_inter = np.maximum(gt_boxes[..., 1], pred_boxes[..., 1])
-    x2_inter = np.minimum(gt_boxes[..., 2], pred_boxes[..., 2])
-    y2_inter = np.minimum(gt_boxes[..., 3], pred_boxes[..., 3])
-
-    # Calculate intersection area
-    inter_width = np.maximum(0, x2_inter - x1_inter)
-    inter_height = np.maximum(0, y2_inter - y1_inter)
-    inter_area = inter_width * inter_height
-
-    # Calculate union area
-    gt_area = (gt_boxes[..., 2] - gt_boxes[..., 0]) * (gt_boxes[..., 3] - gt_boxes[..., 1])
-    pred_area = (pred_boxes[..., 2] - pred_boxes[..., 0]) * (pred_boxes[..., 3] - pred_boxes[..., 1])
-    union_area = gt_area + pred_area - inter_area
-
-    return inter_area / np.maximum(union_area, 1e-7)
-
-
-def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xyxy: bool = True) -> np.ndarray:
-    """
-    Compute IoU matrix between ground truth and predicted annotations.
-
-    Parameters
-    ----------
-    gt_anns : List[dict]
-        List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
-    pred_anns : List[dict]
-        List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
-    convert_to_xyxy : bool, optional
-        If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
-        are already in [x1, y1, x2, y2], by default True
-
-    Returns
-    -------
-    np.ndarray
-        IoU matrix of shape (num_gt, num_pred)
-
-    Examples
-    --------
-    >>> gt = [{'bbox': [10, 10, 20, 20]}]
-    >>> pred = [{'bbox': [12, 12, 18, 18]}]
-    >>> iou_matrix = compute_iou_matrix(gt, pred)
-    """
-    if not gt_anns and not pred_anns:
-        return np.zeros((0, 0))
-
-    gt_boxes = np.array([g['bbox'] for g in gt_anns], dtype=np.float32)
-    pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
-
-    if convert_to_xyxy and gt_boxes.size > 0:
-        gt_boxes[:, 2] += gt_boxes[:, 0]  # x2 = x + w
-        gt_boxes[:, 3] += gt_boxes[:, 1]  # y2 = y + h
-    if convert_to_xyxy and pred_boxes.size > 0:
-        pred_boxes[:, 2] += pred_boxes[:, 0]  # x2 = x + w
-        pred_boxes[:, 3] += pred_boxes[:, 1]  # y2 = y + h
-
-    return vectorized_bbox_iou(gt_boxes, pred_boxes)
-
-
-def precision(tp: int, fp: int) -> float:
-    """
-    Compute precision metric.
-
-    Parameters
-    ----------
-    tp : int
-        Number of true positives
-    fp : int
-        Number of false positives
-
-    Returns
-    -------
-    float
-        Precision value
-
-    Notes
-    -----
-    Precision = TP / (TP + FP)
-    Returns 0.0 when denominator is zero
-    """
-    return tp / (tp + fp) if (tp + fp) > 0 else 0.0
-
-
-def recall(tp: int, fn: int) -> float:
-    """
-    Compute recall metric.
-
-    Parameters
-    ----------
-    tp : int
-        Number of true positives
-    fn : int
-        Number of false negatives
-
-    Returns
-    -------
-    float
-        Recall value
-
-    Notes
-    -----
-    Recall = TP / (TP + FN)
-    Returns 0.0 when denominator is zero
-    """
-    return tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-
-def f1(precision_val: float, recall_val: float) -> float:
-    """
-    Compute F1 score from precision and recall.
-
-    Parameters
-    ----------
-    precision_val : float
-        Precision value
-    recall_val : float
-        Recall value
-
-    Returns
-    -------
-    float
-        F1 score
-
-    Notes
-    -----
-    F1 = 2 * (precision * recall) / (precision + recall)
-    Returns 0.0 when denominator is zero
-    """
-    return 2 * precision_val * recall_val / (precision_val + recall_val) if (precision_val + recall_val) > 0 else 0.0
-
-
-def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple:
-    """
-    Compute precision, recall, and F1 score together.
-
-    Parameters
-    ----------
-    tp : int
-        Number of true positives
-    fp : int
-        Number of false positives
-    fn : int
-        Number of false negatives
-
-    Returns
-    -------
-    tuple
-        (precision, recall, F1) values
-
-    Examples
-    --------
-    >>> p, r, f = precision_recall_f1(5, 2, 3)
-    """
-    p = precision(tp, fp)
-    r = recall(tp, fn)
-    return p, r, f1(p, r)
-
-
-def compute_precision_recall_curve(
-    all_gts: List[List[dict]],
-    all_preds: List[List[dict]],
-    iou_threshold: float = 0.5,
-    class_agnostic: bool = False
-) -> Dict[str, Any]:
-    """
-    Compute precision-recall curve data for object detection evaluation.
-
-    Parameters
-    ----------
-    all_gts : List[List[dict]]
-        List of ground truths per image
-    all_preds : List[List[dict]]
-        List of predictions per image
-    iou_threshold : float, optional
-        IoU threshold for true positive, by default 0.5
-    class_agnostic : bool, optional
-        Whether to ignore classes during matching, by default False
-
-    Returns
-    -------
-    Dict[str, Any]
-        Dictionary containing:
-        - 'precision': Array of precision values
-        - 'recall': Array of recall values
-        - 'thresholds': Array of confidence thresholds
-        - 'ap': Global Average Precision
-        - 'per_class': Dict of per-class AP values
-
-    Notes
-    -----
-    - Processes predictions in descending confidence order
-    - Implements COCO-style 101-point interpolation for AP calculation
-    - Handles both class-aware and class-agnostic evaluation
-    - Excludes crowd annotations from matching
-    """
-    # Flatten and filter predictions
-    flat_preds = []
-    for img_id, preds in enumerate(all_preds):
-        for p in preds:
-            flat_preds.append({
-                'img_id': img_id,
-                'bbox': p['bbox'],
-                'score': p['score'],
-                'class_id': 0 if class_agnostic else p['category_id']
-            })
-
-    # Sort predictions by confidence descending
-    flat_preds.sort(key=lambda x: x['score'], reverse=True)
-    pred_scores = [p['score'] for p in flat_preds]
-
-    # Prepare ground truth structure
-    gt_by_class = defaultdict(list)
-    total_gts = 0
-    class_gt_counts = defaultdict(int)
-
-    for img_id, gts in enumerate(all_gts):
-        for gt in gts:
-            if gt.get('iscrowd', 0) == 1:
-                continue
-
-            class_id = 0 if class_agnostic else gt['category_id']
-            gt_by_class[class_id].append({
-                'img_id': img_id,
-                'bbox': gt['bbox'],
-                'matched': False  # Track matching status
-            })
-            class_gt_counts[class_id] += 1
-            total_gts += 1
-
-    # Initialize result storage
-    precision_vals = []
-    recall_vals = []
-    class_data = defaultdict(lambda: {
-        'tp': 0, 'fp': 0,
-        'precision': [], 'recall': []
-    })
-
-    # Process predictions in descending confidence order
-    for _, pred in enumerate(flat_preds):
-        class_id = pred['class_id']
-        best_iou = 0.0
-        best_gt_idx = -1
-
-        # Find best unmatched GT in same image and class
-        for gt_idx, gt in enumerate(gt_by_class[class_id]):
-            if gt['img_id'] != pred['img_id'] or gt['matched']:
-                continue
-
-            iou = bbox_iou(gt['bbox'], pred['bbox'])
-            if iou > best_iou:
-                best_iou = iou
-                best_gt_idx = gt_idx
-
-        # Update match status
-        is_tp = best_iou >= iou_threshold
-        if is_tp and best_gt_idx != -1:
-            gt_by_class[class_id][best_gt_idx]['matched'] = True
-            class_data[class_id]['tp'] += 1
-        else:
-            class_data[class_id]['fp'] += 1
-
-        # Compute precision/recall for each class
-        for cid, data in class_data.items():
-            tp = data['tp']
-            fp = data['fp']
-            fn = class_gt_counts[cid] - tp
-
-            p_val = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            r_val = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-            data['precision'].append(p_val)
-            data['recall'].append(r_val)
-
-        # Compute global precision/recall
-        global_tp = sum(data['tp'] for data in class_data.values())
-        global_fp = sum(data['fp'] for data in class_data.values())
-        global_fn = total_gts - global_tp
-
-        global_p = global_tp / (global_tp + global_fp) if (global_tp + global_fp) > 0 else 0.0
-        global_r = global_tp / (global_tp + global_fn) if (global_tp + global_fn) > 0 else 0.0
-
-        precision_vals.append(global_p)
-        recall_vals.append(global_r)
-
-    # Compute AP with proper interpolation
-    ap = _compute_ap(recall_vals, precision_vals)
-    per_class_ap = {}
-
-    # Compute per-class AP
-    for class_id, data in class_data.items():
-        if class_gt_counts[class_id] > 0:
-            per_class_ap[class_id] = _compute_ap(data['recall'], data['precision'])
-        else:
-            per_class_ap[class_id] = 0.0
-
-    return {
-        'precision': np.array(precision_vals),
-        'recall': np.array(recall_vals),
-        'thresholds': np.array(pred_scores),
-        'ap': ap,
-        'per_class': per_class_ap
-    }
-
-
-def _compute_ap(recall: list, precision: list) -> float:
-    """
-    Compute Average Precision (AP) using 101-point interpolation (COCO standard).
-
-    Parameters
-    ----------
-    recall : list
-        Recall values at different confidence thresholds
-    precision : list
-        Precision values at different confidence thresholds
-
-    Returns
-    -------
-    float
-        Average Precision (AP) score
-
-    Notes
-    -----
-    - Implements COCO-style 101-point interpolation
-    - Ensures precision is monotonically decreasing
-    - Handles edge cases with no detections
-    """
-    # Pad with 0 and 1 endpoints
-    r = np.array([0.0] + recall + [1.0])
-    p = np.array([0.0] + precision + [0.0])
-
-    # Ensure monotonic decreasing precision
-    for i in range(len(p) - 2, -1, -1):
-        p[i] = max(p[i], p[i + 1])
-
-    # Create 101 recall points
-    r_interp = np.linspace(0, 1, 101)
-    p_interp = np.interp(r_interp, r, p)
-
-    return np.mean(p_interp)
-
-
-class DetectionMetrics:
-    """
-    Computes comprehensive object detection evaluation metrics.
-
-    Features:
-    - Precision, Recall, F1-score
-    - Confusion matrices (detection and multiclass)
-    - Mean Average Precision (mAP) using COCO evaluation
-    - Per-class and global metrics
-    - Supports per-image and batch processing
-    - Handles multiple classes and background detection
-    - Flexible threshold configuration (IoU and confidence)
-    - Excludes specified classes from evaluation
-    - Provides numerical metrics and confusion matrices
-
+    Configuration for annotation data including class mappings and COCO datasets.
+    
     Parameters
     ----------
     names : dict
         Class ID to name mapping
-    iou_thr : float, optional
-        IoU threshold for true positive matching, by default 0.5
-    conf_thr : float, optional
-        Confidence threshold for predictions, by default 0.5
     gt_coco : COCO, optional
         COCO object for ground truths
     predictions_coco : COCO, optional
         COCO object for predictions
     exclude_classes : list, optional
         Class IDs to exclude from evaluation, by default None
-    store_pr_data : bool, optional
-        Whether to store PR curve data, by default False
-    store_pr_curves : bool, optional
-        Whether to compute PR curves, by default True
+    """
+    
+    def __init__(
+        self,
+        names: dict,
+        gt_coco: COCO = None,
+        predictions_coco: COCO = None,
+        exclude_classes: list = None
+    ):
+        self.names = names
+        self.gt_coco = gt_coco
+        self.predictions_coco = predictions_coco
+        self.exclude_classes = exclude_classes or []
 
+
+class ThresholdsConfig:
+    """
+    Configuration for detection thresholds.
+    
+    Parameters
+    ----------
+    iou_thr : float, optional
+        IoU threshold for true positive matching, by default 0.5
+    conf_thr : float, optional
+        Confidence threshold for predictions, by default 0.5
+    """
+    
+    def __init__(self, iou_thr: float = 0.5, conf_thr: float = 0.5):
+        self.iou_thr = iou_thr
+        self.conf_thr = conf_thr
+
+
+class DetectionMetricsState:
+    """
+    Manages the internal state and data structures for DetectionMetrics.
+    
+    This class encapsulates all stateful operations and data management,
+    providing a clean interface for state updates and resets.
+    
     Attributes
     ----------
-    names : Dict[int, str]
-        Class ID to name mapping
-    iou_thr : float
-        IoU threshold for true positive matching
-    conf_thr : float
-        Confidence threshold for predictions
     matrix : np.ndarray
         Global detection confusion matrix
     multiclass_matrix : np.ndarray
@@ -498,36 +108,26 @@ class DetectionMetrics:
         All ground truths across images
     image_counter : int
         Counter for processed images
+    per_class_iou_sum : defaultdict
+        Sum of IoU values per class
+    per_class_tp_count : defaultdict
+        Count of true positives per class
+    per_class_union : defaultdict
+        Union area accumulator per class
+    per_class_intersection : defaultdict
+        Intersection area accumulator per class
+    pr_gts : list
+        Ground truth data for PR curve computation
+    pr_preds : list
+        Prediction data for PR curve computation
+    pr_curves : dict
+        Computed Precision-Recall curves
     """
-
-    def __init__(
-        self,
-        names: dict,
-        iou_thr: float = 0.5,
-        conf_thr: float = 0.5,
-        gt_coco: COCO = None,
-        predictions_coco: COCO = None,
-        exclude_classes: list = None,
-        store_pr_data: bool = False,
-        store_pr_curves: bool = True
-    ):
-        self.names = names
-        self.iou_thr = iou_thr
-        self.conf_thr = conf_thr
-        self.gt_coco = gt_coco
-        self.predictions_coco = predictions_coco
-        self.exclude_classes = exclude_classes or []
-        self.store_pr_data = store_pr_data
-        self.per_class_iou_sum = defaultdict(float)
-        self.per_class_tp_count = defaultdict(int)
-        self.per_class_union = defaultdict(float)
-        self.per_class_intersection = defaultdict(float)
-        self.pr_gts = []
-        self.pr_preds = []
-        self.store_pr_curves = store_pr_curves
-        self.pr_curves = {}
+    
+    def __init__(self):
+        """Initialize state manager with default values."""
         self.reset()
-
+    
     def reset(self) -> None:
         """
         Reset all internal accumulators and state.
@@ -552,8 +152,78 @@ class DetectionMetrics:
         self.per_class_tp_count = defaultdict(int)
         self.per_class_union = defaultdict(float)
         self.per_class_intersection = defaultdict(float)
+        self.pr_gts = []
+        self.pr_preds = []
+        self.pr_curves = {}
+    
+    def initialize_global_mapping(self, names: dict, exclude_classes: list) -> None:
+        """
+        Build class index mapping and initialize confusion matrices.
+        
+        Parameters
+        ----------
+        names : dict
+            Class ID to name mapping
+        exclude_classes : list
+            Classes to exclude from evaluation
+        """
+        valid_ids = [cid for cid in names if cid not in exclude_classes]
+        sorted_ids = sorted(valid_ids)
+        self.class_map = {cid: idx for idx, cid in enumerate(sorted_ids)}
+        self.background_idx = len(self.class_map)
 
-    def _update_iou_metrics(self, cid: int, iou: float, inter: float, gt_area: float, pred_area: float) -> None:
+        size = self.background_idx + 1
+        self.matrix = np.zeros((size, size), dtype=int)
+        self.multiclass_matrix = np.zeros((size, size), dtype=int)
+    
+    def update_support_count(self, gt_anns: list) -> None:
+        """
+        Increment support count for each class.
+
+        Parameters
+        ----------
+        gt_anns : list
+            List of ground truth annotations
+        """
+        for ann in gt_anns:
+            if ann.get('iscrowd', 0) == 1:
+                continue
+            cid = ann['category_id']
+            if cid in self.class_map:
+                self.stats[cid]['support'] += 1
+    
+    def update_confusion_matrices(self, det_conf: np.ndarray, multi_conf: np.ndarray) -> None:
+        """
+        Update both confusion matrices with computed values.
+        
+        Parameters
+        ----------
+        det_conf : np.ndarray
+            Detection confusion matrix for current image
+        multi_conf : np.ndarray
+            Multiclass confusion matrix for current image
+        """
+        self.matrix += det_conf
+        self.multiclass_matrix += multi_conf
+    
+    def update_stats_from_confusion(self, confusion: np.ndarray) -> None:
+        """
+        Update statistics from detection confusion matrix.
+
+        Parameters
+        ----------
+        confusion : np.ndarray
+            Detection confusion matrix
+        """
+        for cid, idx in self.class_map.items():
+            tp = confusion[idx, idx]
+            fp = confusion[:, idx].sum() - tp
+            fn = confusion[idx, self.background_idx]
+            self.stats[cid]['tp'] += int(tp)
+            self.stats[cid]['fp'] += int(fp)
+            self.stats[cid]['fn'] += int(fn)
+    
+    def update_iou_metrics(self, cid: int, iou: float, inter: float, gt_area: float, pred_area: float) -> None:
         """
         Update accumulated IoU metrics for a class.
 
@@ -575,34 +245,128 @@ class DetectionMetrics:
         self.per_class_tp_count[cid] += 1
         self.per_class_intersection[cid] += inter
         self.per_class_union[cid] += union
-
-    def _initialize_global_mapping(self) -> None:
-        """Build class index mapping and initialize confusion matrices."""
-        valid_ids = [cid for cid in self.names if cid not in self.exclude_classes]
-        sorted_ids = sorted(valid_ids)
-        self.class_map = {cid: idx for idx, cid in enumerate(sorted_ids)}
-        self.background_idx = len(self.class_map)
-
-        size = self.background_idx + 1
-        self.matrix = np.zeros((size, size), dtype=int)
-        self.multiclass_matrix = np.zeros((size, size), dtype=int)
-
-    def update_support_number(self, gt_anns: list) -> None:
+    
+    def store_predictions_for_coco(self, pred_anns: list, conf_thr: float) -> None:
         """
-        Increment support count for each class.
-
+        Store predictions above confidence threshold for COCO evaluation.
+        
+        Parameters
+        ----------
+        pred_anns : list
+            Prediction annotations
+        conf_thr : float
+            Confidence threshold
+        """
+        for p in pred_anns:
+            if p['score'] >= conf_thr:
+                self.all_preds.append({
+                    'image_id': self.image_counter,
+                    'category_id': p['category_id'],
+                    'bbox': p['bbox'],
+                    'score': p['score']
+                })
+    
+    def store_pr_data(self, gt_anns: list, pred_anns: list) -> None:
+        """
+        Store data for Precision-Recall curve computation.
+        
         Parameters
         ----------
         gt_anns : list
-            List of ground truth annotations
+            Ground truth annotations
+        pred_anns : list
+            Prediction annotations
         """
-        for ann in gt_anns:
-            if ann.get('iscrowd', 0) == 1:
-                continue
-            cid = ann['category_id']
-            if cid in self.class_map:
-                self.stats[cid]['support'] += 1
+        self.pr_gts.append(gt_anns)
+        self.pr_preds.append(pred_anns)
+    
+    def increment_image_counter(self) -> None:
+        """Increment the processed image counter."""
+        self.image_counter += 1
+    
+    def get_confusion_matrix_labels(self, names: dict, exclude_classes: list) -> list:
+        """
+        Get labels for confusion matrix.
 
+        Parameters
+        ----------
+        names : dict
+            Class ID to name mapping
+        exclude_classes : list
+            Classes to exclude
+
+        Returns
+        -------
+        list
+            Class names with 'background' as last element
+        """
+        valid_ids = [cid for cid in names if cid not in exclude_classes]
+        sorted_ids = sorted(valid_ids)
+        labels = [names[cid] for cid in sorted_ids]
+        labels.append('background')
+        return labels
+
+
+class DetectionMetrics:
+    """
+    Computes comprehensive object detection evaluation metrics.
+
+    Features:
+    - Precision, Recall, F1-score
+    - Confusion matrices (detection and multiclass)
+    - Mean Average Precision (mAP) using COCO evaluation
+    - Per-class and global metrics
+    - Supports per-image and batch processing
+    - Handles multiple classes and background detection
+    - Flexible threshold configuration (IoU and confidence)
+    - Excludes specified classes from evaluation
+    - Provides numerical metrics and confusion matrices
+
+    Parameters
+    ----------
+    annotations_config : AnnotationsConfig
+        Configuration for annotation data
+    thresholds_config : ThresholdsConfig
+        Configuration for detection thresholds
+    pr_config : PrecisionRecallConfig
+        Configuration for Precision-Recall data
+    """
+
+    def __init__(
+        self,
+        annotations_config: AnnotationsConfig,
+        thresholds_config: ThresholdsConfig = ThresholdsConfig(),
+        pr_config: PrecisionRecallConfig =  PrecisionRecallConfig()
+    ):
+        # Configuration objects
+        self.annotations_config = annotations_config
+        self.thresholds_config = thresholds_config
+        self.pr_config = pr_config
+        
+        # Initialize state manager
+        self.state = DetectionMetricsState()
+        self.reset()
+
+    def reset(self) -> None:
+        """Reset all internal accumulators and state."""
+        self.state.reset()
+    
+    @property
+    def matrix(self) -> List[List[int]]:
+        return self.state.matrix
+    
+    @property
+    def pr_curves(self) -> List:
+        return self.state.pr_curves
+    
+    @property
+    def multiclass_matrix(self) -> List:
+        return self.state.multiclass_matrix
+
+    @property
+    def class_map(self):
+        return self.state.class_map
+    
     def process_image(self, gt_anns: list, pred_anns: list) -> None:
         """
         Process detections for a single image.
@@ -627,42 +391,40 @@ class DetectionMetrics:
         - Stores predictions above confidence threshold for COCO evaluation
         """
         # Filter unwanted classes
-        gt = [g for g in gt_anns if g['category_id'] not in self.exclude_classes]
-        pr = [p for p in pred_anns if p['category_id'] not in self.exclude_classes]
+        exclude_classes = self.annotations_config.exclude_classes
+        gt = [g for g in gt_anns if g['category_id'] not in exclude_classes]
+        pr = [p for p in pred_anns if p['category_id'] not in exclude_classes]
 
-        if self.matrix is None:
-            self._initialize_global_mapping()
+        # Initialize global mapping if needed
+        if self.state.matrix is None:
+            self.state.initialize_global_mapping(
+                self.annotations_config.names, 
+                exclude_classes
+            )
 
         # Update support counts
-        self.update_support_number(gt)
+        self.state.update_support_count(gt)
 
         # Calculate IoU matrix
         iou_mat_full = compute_iou_matrix(gt, pr)
 
-        # Compute detection confusion
+        # Compute confusion matrices
         det_conf = self._compute_detection_confusion(gt, pr, iou_mat_full)
-        self.matrix += det_conf
-        self._update_stats_from_confusion(det_conf)
-
-        # Compute multiclass confusion
         multi_conf = self._compute_multiclass_confusion(gt, pr, iou_mat_full)
-        self.multiclass_matrix += multi_conf
+        
+        # Update state with computed matrices
+        self.state.update_confusion_matrices(det_conf, multi_conf)
+        self.state.update_stats_from_confusion(det_conf)
 
         # Store predictions for COCO mAP
-        for p in pr:
-            if p['score'] >= self.conf_thr:
-                self.all_preds.append({
-                    'image_id': self.image_counter,
-                    'category_id': p['category_id'],
-                    'bbox': p['bbox'],
-                    'score': p['score']
-                })
+        self.state.store_predictions_for_coco(pr, self.thresholds_config.conf_thr)
 
-        # Store data for PR curve computation
-        if self.store_pr_data:
-            self.pr_gts.append(gt)
-            self.pr_preds.append(pr)
-        self.image_counter += 1
+        # Store data for PR curve computation if enabled
+        if self.pr_config.store_pr_data:
+            self.state.store_pr_data(gt, pr)
+        
+        # Increment image counter
+        self.state.increment_image_counter()
 
     def _filter_annotations(
         self,
@@ -686,7 +448,7 @@ class DetectionMetrics:
         """
         gt_non_crowd = [g for g in gt_anns if g.get('iscrowd', 0) == 0]
         gt_crowd = [g for g in gt_anns if g.get('iscrowd', 0) == 1]
-        preds = [p for p in pred_anns if p['score'] >= self.conf_thr]
+        preds = [p for p in pred_anns if p['score'] >= self.thresholds_config.conf_thr]
         return gt_non_crowd, gt_crowd, preds
 
     def _handle_detection_conf_edge_cases(
@@ -719,18 +481,18 @@ class DetectionMetrics:
         if not preds:
             for gt in gt_non_crowd:
                 cid = gt['category_id']
-                if cid in self.class_map:
-                    idx = self.class_map[cid]
-                    confusion[idx, self.background_idx] += 1
+                if cid in self.state.class_map:
+                    idx = self.state.class_map[cid]
+                    confusion[idx, self.state.background_idx] += 1
             return True
 
         # Case 2: No ground truths → all preds are FP
         if not gt_non_crowd and not gt_crowd:
             for pr in preds:
                 cid = pr['category_id']
-                if cid in self.class_map:
-                    idx = self.class_map[cid]
-                    confusion[self.background_idx, idx] += 1
+                if cid in self.state.class_map:
+                    idx = self.state.class_map[cid]
+                    confusion[self.state.background_idx, idx] += 1
             return True
 
         return False
@@ -786,10 +548,10 @@ class DetectionMetrics:
                 best_gt_index = unmatched_gt_list[best_idx]
 
                 # Record TP if match meets threshold
-                if best_iou >= self.iou_thr:
+                if best_iou >= self.thresholds_config.iou_thr:
                     gt_matched[best_gt_index] = True
                     pred_matched[j] = True
-                    idx = self.class_map[cid]
+                    idx = self.state.class_map[cid]
                     confusion[idx, idx] += 1
                     unmatched_gt_list.pop(best_idx)
 
@@ -800,10 +562,8 @@ class DetectionMetrics:
                     pred_area = pred_box[2] * pred_box[3]
                     inter = best_iou * (gt_area + pred_area) / (1 + best_iou) if best_iou > 0 else 0.0
 
-                    # Update IoU metrics
-                    self._update_iou_metrics(
-                        cid, best_iou, inter, gt_area, pred_area
-                    )
+                    # Update IoU metrics through state manager
+                    self.state.update_iou_metrics(cid, best_iou, inter, gt_area, pred_area)
         return gt_matched, pred_matched
 
     def _process_crowd_matches(
@@ -836,7 +596,7 @@ class DetectionMetrics:
                     continue
                 if crowd['category_id'] != pred['category_id']:
                     continue
-                if bbox_iou(crowd['bbox'], pred['bbox']) >= self.iou_thr:
+                if bbox_iou(crowd['bbox'], pred['bbox']) >= self.thresholds_config.iou_thr:
                     crowd_matched[j] = True
         return crowd_matched
 
@@ -871,17 +631,17 @@ class DetectionMetrics:
         for i, matched in enumerate(gt_matched):
             if not matched:
                 cid = gt_non_crowd[i]['category_id']
-                if cid in self.class_map:
-                    idx = self.class_map[cid]
-                    confusion[idx, self.background_idx] += 1
+                if cid in self.state.class_map:
+                    idx = self.state.class_map[cid]
+                    confusion[idx, self.state.background_idx] += 1
 
         # Process false positives (unmatched preds not in crowd)
         for j, matched in enumerate(pred_matched):
             if not matched and not crowd_matched[j]:
                 cid = preds[j]['category_id']
-                if cid in self.class_map:
-                    idx = self.class_map[cid]
-                    confusion[self.background_idx, idx] += 1
+                if cid in self.state.class_map:
+                    idx = self.state.class_map[cid]
+                    confusion[self.state.background_idx, idx] += 1
 
     def _compute_detection_confusion(
         self,
@@ -913,7 +673,7 @@ class DetectionMetrics:
         - Updates IoU metrics for matched pairs
         """
         # Initialize matrix
-        size = self.background_idx + 1
+        size = self.state.background_idx + 1
         confusion = np.zeros((size, size), dtype=int)
         gt_non_crowd, gt_crowd, preds = self._filter_annotations(gt_anns, pred_anns)
 
@@ -987,8 +747,8 @@ class DetectionMetrics:
                 pred_matched[j] = True
                 gcls = gt_anns[best_i]['category_id']
                 pcls = pred_anns[j]['category_id']
-                if gcls in self.class_map and pcls in self.class_map:
-                    confusion[self.class_map[gcls], self.class_map[pcls]] += 1
+                if gcls in self.state.class_map and pcls in self.state.class_map:
+                    confusion[self.state.class_map[gcls], self.state.class_map[pcls]] += 1
 
         return gt_matched.tolist(), pred_matched.tolist(), confusion
 
@@ -1015,15 +775,15 @@ class DetectionMetrics:
         - Uses global greedy matching strategy
         - Includes background class for unmatched items
         """
-        preds = [p for p in pred_anns if p['score'] >= self.conf_thr]
-        size = self.background_idx + 1
+        preds = [p for p in pred_anns if p['score'] >= self.thresholds_config.conf_thr]
+        size = self.state.background_idx + 1
         confusion = np.zeros((size, size), dtype=int)
         if self._handle_detection_edge_cases(gt_anns, preds, confusion):
             return confusion
         iou_mat = iou_mat_full
 
         gt_mat, pred_mat, confusion = self.match_detection_global(
-            gt_anns, preds, iou_mat, self.iou_thr, confusion
+            gt_anns, preds, iou_mat, self.thresholds_config.iou_thr, confusion
         )
         self._handle_unmatched_gts(gt_anns, gt_mat, confusion)
         self._handle_unmatched_preds(preds, pred_mat, confusion)
@@ -1055,14 +815,14 @@ class DetectionMetrics:
         if not pred_anns:
             for gt in gt_anns:
                 cid = gt['category_id']
-                if cid in self.class_map:
-                    confusion[self.class_map[cid], self.background_idx] += 1
+                if cid in self.state.class_map:
+                    confusion[self.state.class_map[cid], self.state.background_idx] += 1
             return True
         if not gt_anns:
             for pr in pred_anns:
                 cid = pr['category_id']
-                if cid in self.class_map:
-                    confusion[self.background_idx, self.class_map[cid]] += 1
+                if cid in self.state.class_map:
+                    confusion[self.state.background_idx, self.state.class_map[cid]] += 1
             return True
         return False
 
@@ -1082,8 +842,8 @@ class DetectionMetrics:
         for i, matched in enumerate(gt_matched):
             if not matched:
                 cid = gt_anns[i]['category_id']
-                if cid in self.class_map:
-                    confusion[self.class_map[cid], self.background_idx] += 1
+                if cid in self.state.class_map:
+                    confusion[self.state.class_map[cid], self.state.background_idx] += 1
 
     def _handle_unmatched_preds(self, pred_anns: list, pred_matched: list, confusion: np.ndarray) -> None:
         """
@@ -1101,25 +861,8 @@ class DetectionMetrics:
         for j, matched in enumerate(pred_matched):
             if not matched:
                 cid = pred_anns[j]['category_id']
-                if cid in self.class_map:
-                    confusion[self.background_idx, self.class_map[cid]] += 1
-
-    def _update_stats_from_confusion(self, confusion: np.ndarray) -> None:
-        """
-        Update statistics from detection confusion matrix.
-
-        Parameters
-        ----------
-        confusion : np.ndarray
-            Detection confusion matrix
-        """
-        for cid, idx in self.class_map.items():
-            tp = confusion[idx, idx]
-            fp = confusion[:, idx].sum() - tp
-            fn = confusion[idx, self.background_idx]
-            self.stats[cid]['tp'] += int(tp)
-            self.stats[cid]['fp'] += int(fp)
-            self.stats[cid]['fn'] += int(fn)
+                if cid in self.state.class_map:
+                    confusion[self.state.background_idx, self.state.class_map[cid]] += 1
 
     def compute_metrics(self) -> dict:
         """
@@ -1139,22 +882,25 @@ class DetectionMetrics:
         - Calculates both average IoU and aggregate IoU per class
         - Includes PR curve data when store_pr_curves is enabled
         """
-        def has_coco_gt(): return self.gt_coco is not None
-        def has_coco_pred(): return self.predictions_coco is not None
+        def has_coco_gt(): 
+            return self.annotations_config.gt_coco is not None
+        
+        def has_coco_pred(): 
+            return self.annotations_config.predictions_coco is not None
 
         # Initialize metrics dictionary
         metrics = {}
         total_tp = total_fp = total_fn = total_support = 0
 
         # Reset PR curves storage
-        self.pr_curves = {}
+        self.state.pr_curves = {}
 
         # Compute per-class metrics
-        for cid, idx in self.class_map.items():
-            tp = self.stats[cid]['tp']
-            fp = self.stats[cid]['fp']
-            fn = self.stats[cid]['fn']
-            sup = self.stats[cid]['support']
+        for cid, idx in self.state.class_map.items():
+            tp = self.state.stats[cid]['tp']
+            fp = self.state.stats[cid]['fp']
+            fn = self.state.stats[cid]['fn']
+            sup = self.state.stats[cid]['support']
             p, r, f = precision_recall_f1(tp, fp, fn)
             metrics[cid] = {'precision': p, 'recall': r, 'f1': f,
                             'support': sup, 'tp': tp, 'fp': fp, 'fn': fn}
@@ -1172,23 +918,26 @@ class DetectionMetrics:
 
         # Compute COCO mAP if available
         if has_coco_gt() and has_coco_pred():
-            gmap, gmap50, gmap75, per_class_ap = self._compute_map(self.gt_coco, self.predictions_coco)
+            gmap, gmap50, gmap75, per_class_ap = self._compute_map(
+                self.annotations_config.gt_coco, 
+                self.annotations_config.predictions_coco
+            )
             metrics['global']['mAP'] = float(gmap)
             metrics['global']['mAP50'] = float(gmap50)
             metrics['global']['mAP75'] = float(gmap75)
 
             # Add per-class AP to metrics
-            for cid in self.class_map:
+            for cid in self.state.class_map:
                 ap_val = per_class_ap.get(cid, 0.0)
                 metrics[cid]['ap'] = float(ap_val)
 
         # Compute IoU metrics
         class_ious = []
-        for cid in self.class_map:
-            tp_count = self.per_class_tp_count.get(cid, 0)
-            iou_sum = self.per_class_iou_sum.get(cid, 0.0)
-            inter = self.per_class_intersection.get(cid, 0.0)
-            union = self.per_class_union.get(cid, 0.0)
+        for cid in self.state.class_map:
+            tp_count = self.state.per_class_tp_count.get(cid, 0)
+            iou_sum = self.state.per_class_iou_sum.get(cid, 0.0)
+            inter = self.state.per_class_intersection.get(cid, 0.0)
+            union = self.state.per_class_union.get(cid, 0.0)
 
             # Calculate average IoU for matched pairs
             avg_iou = iou_sum / tp_count if tp_count > 0 else 0.0
@@ -1196,21 +945,20 @@ class DetectionMetrics:
             # Calculate aggregate IoU
             agg_iou = inter / union if union > 0 else 0.0
 
-            metrics[cid].update({
-                'iou': float(avg_iou),
-                'agg_iou': float(agg_iou)
-            })
+            # Update metrics for this class
+            if cid in metrics:
+                metrics[cid]['iou'] = float(avg_iou)
+                metrics[cid]['agg_iou'] = float(agg_iou)
             class_ious.append(agg_iou)
 
-        # Calculate mIoU
+        # Calculate mIoU (mean of aggregate IoU per class)
         mIoU = sum(class_ious) / len(class_ious) if class_ious else 0.0
         metrics['global']['mIoU'] = float(mIoU)
 
         # Compute PR curves if enabled
-        if self.store_pr_curves:
+        if self.pr_config.store_pr_curves:
             self._compute_pr_curves(metrics)
-            # Include PR curves data in metrics
-            metrics['pr_curves'] = self.pr_curves
+            metrics['pr_curves'] = self.state.pr_curves
 
         return metrics
 
@@ -1223,16 +971,24 @@ class DetectionMetrics:
         metrics : dict
             Computed metrics dictionary
         """
-        if not self.gt_coco or not self.predictions_coco:
+        if not self.annotations_config.gt_coco or not self.annotations_config.predictions_coco:
             return
 
+        # Reset PR curves storage
+        self.state.pr_curves = {}
+        
         try:
             with io.StringIO() as buf, contextlib.redirect_stdout(buf):
                 # Filter out excluded classes
-                cat_ids = self.gt_coco.getCatIds()
-                valid_cat_ids = [cat_id for cat_id in cat_ids if cat_id not in self.exclude_classes]
+                cat_ids = self.annotations_config.gt_coco.getCatIds()
+                valid_cat_ids = [cat_id for cat_id in cat_ids 
+                                 if cat_id not in self.annotations_config.exclude_classes]
 
-                evaluator = COCOeval(self.gt_coco, self.predictions_coco, 'bbox')
+                evaluator = COCOeval(
+                    self.annotations_config.gt_coco, 
+                    self.annotations_config.predictions_coco, 
+                    'bbox'
+                )
                 evaluator.params.catIds = valid_cat_ids
                 evaluator.evaluate()
                 evaluator.accumulate()
@@ -1259,7 +1015,7 @@ class DetectionMetrics:
                 # Use AP from metrics if stats empty
                 ap_global = metrics['global']['mAP'] if len(evaluator.stats) == 0 else evaluator.stats[0]
 
-                self.pr_curves['global'] = {
+                self.state.pr_curves['global'] = {
                     'recall': recall_thrs,
                     'precision': np.array(precision_global),
                     'ap': ap_global
@@ -1270,7 +1026,7 @@ class DetectionMetrics:
                     precision_vals = evaluator.eval['precision'][0, :, k, aind, mind]
                     valid_mask = precision_vals > -1
 
-                    self.pr_curves[int(cat_id)] = {
+                    self.state.pr_curves[int(cat_id)] = {
                         'recall': recall_thrs[valid_mask],
                         'precision': precision_vals[valid_mask],
                         'ap': metrics.get(int(cat_id), {}).get('ap', 0)
@@ -1304,7 +1060,8 @@ class DetectionMetrics:
         with io.StringIO() as buf, contextlib.redirect_stdout(buf):
             evaluator = COCOeval(gt_coco, predictions_coco, 'bbox')
             cat_ids = gt_coco.getCatIds()
-            valid_cat_ids = [cat_id for cat_id in cat_ids if cat_id not in self.exclude_classes]
+            valid_cat_ids = [cat_id for cat_id in cat_ids 
+                             if cat_id not in self.annotations_config.exclude_classes]
             evaluator.params.catIds = valid_cat_ids
 
             evaluator.evaluate()
@@ -1368,11 +1125,11 @@ class DetectionMetrics:
                 for k, v in vals.items():
                     res[f"{k}/global"] = v
             else:
-                cls_name = self.names.get(cid, f'class_{cid}')
+                cls_name = self.annotations_config.names.get(cid, f'class_{cid}')
                 for k, v in vals.items():
                     res[f"{k}/{cls_name}"] = v
         # Attach multiclass confusion matrix
-        res['multiclass_confusion_matrix'] = self.multiclass_matrix.tolist()
+        res['multiclass_confusion_matrix'] = self.state.multiclass_matrix.tolist()
         return res
 
     def get_confusion_matrix_labels(self) -> list:
@@ -1389,8 +1146,7 @@ class DetectionMetrics:
         - Order corresponds to confusion matrix rows/columns
         - Excludes classes specified in exclude_classes
         """
-        valid_ids = [cid for cid in self.names if cid not in self.exclude_classes]
-        sorted_ids = sorted(valid_ids)
-        labels = [self.names[cid] for cid in sorted_ids]
-        labels.append('background')
-        return labels
+        return self.state.get_confusion_matrix_labels(
+            self.annotations_config.names, 
+            self.annotations_config.exclude_classes
+        )
