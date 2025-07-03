@@ -144,7 +144,7 @@ def test_invalid_json():
     with open(invalid_json_path, 'w') as f:
         f.write("invalid json content")
     
-    with pytest.raises(ValueError, match="Invalid JSON file"):
+    with pytest.raises(ValueError, match="Invalid JSON in path"):
         manager = DetectionMetricsManager(groundtruth_json_path=invalid_json_path, prediction_json_path="./tests/jsons/simple/predictions_coco.json")
 
 def test_invalid_thresholds():

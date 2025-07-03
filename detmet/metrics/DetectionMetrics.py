@@ -156,7 +156,7 @@ class DetectionMetricsState:
         self.pr_preds = []
         self.pr_curves = {}
     
-    def initialize_global_mapping(self, names: dict, exclude_classes: list) -> None:
+    def initialize_global_mapping(self, names: dict, exclude_classes: list[int]) -> None:
         """
         Build class index mapping and initialize confusion matrices.
         
@@ -176,7 +176,7 @@ class DetectionMetricsState:
         self.matrix = np.zeros((size, size), dtype=int)
         self.multiclass_matrix = np.zeros((size, size), dtype=int)
     
-    def update_support_count(self, gt_anns: list) -> None:
+    def update_support_count(self, gt_anns: list[Dict]) -> None:
         """
         Increment support count for each class.
 
@@ -246,7 +246,7 @@ class DetectionMetricsState:
         self.per_class_intersection[cid] += inter
         self.per_class_union[cid] += union
     
-    def store_predictions_for_coco(self, pred_anns: list, conf_thr: float) -> None:
+    def store_predictions_for_coco(self, pred_anns: list[Dict], conf_thr: float) -> None:
         """
         Store predictions above confidence threshold for COCO evaluation.
         
@@ -266,7 +266,7 @@ class DetectionMetricsState:
                     'score': p['score']
                 })
     
-    def store_pr_data(self, gt_anns: list, pred_anns: list) -> None:
+    def store_pr_data(self, gt_anns: list[Dict], pred_anns: list[Dict]) -> None:
         """
         Store data for Precision-Recall curve computation.
         
@@ -284,7 +284,7 @@ class DetectionMetricsState:
         """Increment the processed image counter."""
         self.image_counter += 1
     
-    def get_confusion_matrix_labels(self, names: dict, exclude_classes: list) -> list:
+    def get_confusion_matrix_labels(self, names: dict, exclude_classes: list[int]) -> list[str]:
         """
         Get labels for confusion matrix.
 
@@ -367,7 +367,7 @@ class DetectionMetrics:
     def class_map(self):
         return self.state.class_map
     
-    def process_image(self, gt_anns: list, pred_anns: list) -> None:
+    def process_image(self, gt_anns: list[Dict], pred_anns: list[Dict]) -> None:
         """
         Process detections for a single image.
 
@@ -428,9 +428,9 @@ class DetectionMetrics:
 
     def _filter_annotations(
         self,
-        gt_anns: list,
-        pred_anns: list
-    ) -> Tuple[List[dict], List[dict], List[dict]]:
+        gt_anns: list[Dict],
+        pred_anns: list[Dict]
+    ) -> Tuple[List[Dict], List[Dict], List[Dict]]:
         """
         Separate crowd/non-crowd GTs and filter predictions by confidence.
 
@@ -453,9 +453,9 @@ class DetectionMetrics:
 
     def _handle_detection_conf_edge_cases(
         self,
-        gt_non_crowd: list,
-        gt_crowd: list,
-        preds: list,
+        gt_non_crowd: list[Dict],
+        gt_crowd: list[Dict],
+        preds: list[Dict],
         confusion: np.ndarray
     ) -> bool:
         """
@@ -499,8 +499,8 @@ class DetectionMetrics:
 
     def _perform_per_class_matching(
         self,
-        gt_non_crowd: list,
-        preds: list,
+        gt_non_crowd: list[Dict],
+        preds: list[Dict],
         iou_mat: np.ndarray,
         confusion: np.ndarray
     ) -> Tuple[List[bool], List[bool]]:
@@ -568,8 +568,8 @@ class DetectionMetrics:
 
     def _process_crowd_matches(
         self,
-        gt_crowd: list,
-        preds: list,
+        gt_crowd: list[Dict],
+        preds: list[Dict],
         pred_matched: List[bool]
     ) -> List[bool]:
         """
@@ -602,8 +602,8 @@ class DetectionMetrics:
 
     def _update_confusion_unmatched(
         self,
-        gt_non_crowd: list,
-        preds: list,
+        gt_non_crowd: list[Dict],
+        preds: list[Dict],
         gt_matched: List[bool],
         pred_matched: List[bool],
         crowd_matched: List[bool],
@@ -645,8 +645,8 @@ class DetectionMetrics:
 
     def _compute_detection_confusion(
         self,
-        gt_anns: list,
-        pred_anns: list,
+        gt_anns: list[Dict],
+        pred_anns: list[Dict],
         iou_mat_full: np.ndarray = None
     ) -> np.ndarray:
         """
@@ -698,8 +698,8 @@ class DetectionMetrics:
 
     def match_detection_global(
         self,
-        gt_anns: list,
-        pred_anns: list,
+        gt_anns: list[Dict],
+        pred_anns: list[Dict],
         iou_matrix: np.ndarray,
         iou_thr: float,
         confusion: np.ndarray
@@ -752,7 +752,10 @@ class DetectionMetrics:
 
         return gt_matched.tolist(), pred_matched.tolist(), confusion
 
-    def _compute_multiclass_confusion(self, gt_anns: list, pred_anns: list, iou_mat_full: np.ndarray = None) -> np.ndarray:
+    def _compute_multiclass_confusion(self,
+        gt_anns: list[Dict],
+        pred_anns: list[Dict],
+        iou_mat_full: np.ndarray = None) -> np.ndarray:
         """
         Compute multiclass confusion matrix.
 
@@ -791,8 +794,8 @@ class DetectionMetrics:
 
     def _handle_detection_edge_cases(
         self,
-        gt_anns: list,
-        pred_anns: list,
+        gt_anns: list[Dict],
+        pred_anns: list[Dict],
         confusion: np.ndarray
     ) -> bool:
         """
@@ -826,7 +829,10 @@ class DetectionMetrics:
             return True
         return False
 
-    def _handle_unmatched_gts(self, gt_anns: list, gt_matched: list, confusion: np.ndarray) -> None:
+    def _handle_unmatched_gts(self,
+        gt_anns: list[Dict],
+        gt_matched: list[Dict],
+        confusion: np.ndarray) -> None:
         """
         Process unmatched ground truths as false negatives.
 
@@ -845,7 +851,10 @@ class DetectionMetrics:
                 if cid in self.state.class_map:
                     confusion[self.state.class_map[cid], self.state.background_idx] += 1
 
-    def _handle_unmatched_preds(self, pred_anns: list, pred_matched: list, confusion: np.ndarray) -> None:
+    def _handle_unmatched_preds(self,
+        pred_anns: list[Dict],
+        pred_matched: list[bool],
+        confusion: np.ndarray) -> None:
         """
         Process unmatched predictions as false positives.
 
@@ -962,7 +971,7 @@ class DetectionMetrics:
 
         return metrics
 
-    def _compute_pr_curves(self, metrics: dict) -> None:
+    def _compute_pr_curves(self, metrics: Dict) -> None:
         """
         Compute and store Precision-Recall curves.
 

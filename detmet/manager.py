@@ -8,7 +8,8 @@ from typing import Dict, List, Tuple, Optional
 from .metrics.DetectionMetrics import DetectionMetrics
 from .metrics import AnnotationsConfig, ThresholdsConfig, PrecisionRecallConfig
 from .results import MetricsResult
-from .utils import check_normalized, map_class_keys_recursive
+from .utils import map_class_keys_recursive
+from .validations import validate_json_format, validate_normalized
 import contextlib
 import io
 
@@ -52,6 +53,12 @@ class DetectionMetricsManager:
         prediction_json_path : str
             Path to COCO-format prediction results JSON file
         """
+        if not isinstance(groundtruth_json_path, str):
+            raise TypeError("Groundtruth Json Path must be String")
+        if not isinstance(prediction_json_path, str):
+            raise TypeError("Predictions Json Path must be String")
+        validate_json_format(groundtruth_json_path)
+        validate_json_format(prediction_json_path)
         self._initialize(groundtruth_json_path, prediction_json_path)
         self.labels = []
 
@@ -171,8 +178,16 @@ class DetectionMetricsManager:
         >>> result = manager.calculate_metrics(iou_thr=0.5, conf_thr=0.5)
         >>> print(result.metrics['global']['precision'])
         """
-        check_normalized(iou_thr)
-        check_normalized(conf_thr)
+        validate_normalized(iou_thr)
+        validate_normalized(conf_thr)
+        if exclude_classes is not None:
+            if not isinstance(exclude_classes, list):
+                raise TypeError("exclude_classes must be a list or None, "
+                                f"got {type(exclude_classes)}")
+            
+            if not all(isinstance(x, (int)) for x in exclude_classes):
+                raise TypeError("All elements in exclude_classes must be int")
+
         metrics_calculator = DetectionMetrics(
             AnnotationsConfig(
                 names=self.names,
@@ -252,9 +267,6 @@ def compute_metrics(groundtruth_json_path: str, prediction_json_path: str,
     #   - metrics.json
     #   - pr_curves.png
     """
-    check_normalized(iou_thr)
-    check_normalized(conf_thr)
-    
     manager = DetectionMetricsManager(groundtruth_json_path=groundtruth_json_path,prediction_json_path=prediction_json_path)
     metrics = manager.calculate_metrics(conf_thr=conf_thr, iou_thr=iou_thr, exclude_classes=exclude_classes)
     metrics.plot_confusion_matrix('confusion_matrix.png')

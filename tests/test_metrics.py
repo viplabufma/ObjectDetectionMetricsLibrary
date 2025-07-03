@@ -783,20 +783,20 @@ def test_precision_recall_curve_empty_inputs():
     """Test edge cases with empty inputs.
     
     Verifies:
-    - Graceful handling of empty ground truth
+    - Graceful handling of empty ground truth (raises ValueError)
     - Graceful handling of empty predictions
     - Zero AP when no valid detections
     """
-    # Case 1: No ground truth
-    result1 = precision_recall_curve([], [[]])
-    assert result1['ap'] == 0.0
-    assert len(result1['precision']) == 0
+    import pytest
+    
+    # Case 1: No ground truth 
+    with pytest.raises(ValueError, match="Groundtruth lists cannot be empty"):
+        precision_recall_curve([], [[]])
     
     # Case 2: No predictions
     all_gts = [[{'category_id': 1, 'bbox': [10, 10, 20, 20]}]]
-    all_preds = [[]]
-    result2 = precision_recall_curve(all_gts, all_preds)
-    assert result2['ap'] == 0.0
+    with pytest.raises(ValueError, match="Predictions lists cannot be empty"):
+        precision_recall_curve(all_gts, [])
     
     # Case 3: Valid data but no matches
     all_preds = [[{'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.9}]]

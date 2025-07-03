@@ -158,51 +158,6 @@ def convert_numpy(
     # Other types don't need conversion
     return obj
 
-
-def check_normalized(value: float, param_name: str = "value") -> None:
-    """
-    Verify if a value is normalized (between 0.0 and 1.0 inclusive).
-    
-    Parameters
-    ----------
-    value : float
-        The value to be checked for normalization.
-    param_name : str, optional
-        Name of the parameter for error messaging, by default "value".
-    
-    Raises
-    ------
-    ValueError
-        If the value is not within the range [0.0, 1.0].
-    
-    Examples
-    --------
-    >>> check_normalized(0.5)  # Valid
-    >>> check_normalized(1.0)  # Valid
-    
-    >>> check_normalized(-0.1)
-    Traceback (most recent call last):
-    ...
-    ValueError: 'threshold' must be between 0.0 and 1.0 (got: -0.1)
-    
-    >>> check_normalized(1.5, "alpha")
-    Traceback (most recent call last):
-    ...
-    ValueError: 'alpha' must be between 0.0 and 1.0 (got: 1.5)
-    
-    >>> parameters = {'threshold': 0.7, 'ratio': 1.2}
-    >>> for name, val in parameters.items():
-    ...     try:
-    ...         check_normalized(val, name)
-    ...     except ValueError as e:
-    ...         print(f"Validation failed: {e}")
-    Validation failed: 'ratio' must be between 0.0 and 1.0 (got: 1.2)
-    """
-    if not (0.0 <= value <= 1.0):
-        raise ValueError(
-            f"'{param_name}' must be between 0.0 and 1.0 (got: {value})"
-        )
-
 def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
     """
     Compute IoU between multiple ground truth and predicted bounding boxes.
