@@ -783,27 +783,35 @@ def test_precision_recall_curve_empty_inputs():
     """Test edge cases with empty inputs.
     
     Verifies:
-    - Graceful handling of empty ground truth (raises ValueError)
-    - Graceful handling of empty predictions
+    - Proper handling of empty ground truth
+    - Proper handling of empty predictions
     - Zero AP when no valid detections
     """
-    import pytest
-    
-    # Case 1: No ground truth 
-    with pytest.raises(ValueError, match="Groundtruth lists cannot be empty"):
+    # Case 1: No ground truth
+    with pytest.raises(TypeError) as exc_info:
         precision_recall_curve([], [[]])
+    assert "all_gts: List must contain at least 1 elements, got 0" in str(exc_info.value)
     
     # Case 2: No predictions
     all_gts = [[{'category_id': 1, 'bbox': [10, 10, 20, 20]}]]
-    with pytest.raises(ValueError, match="Predictions lists cannot be empty"):
+    with pytest.raises(TypeError) as exc_info:
         precision_recall_curve(all_gts, [])
+    assert "all_preds: List must contain at least 1 elements, got 0" in str(exc_info.value)
     
     # Case 3: Valid data but no matches
     all_preds = [[{'category_id': 1, 'bbox': [100, 100, 30, 30], 'score': 0.9}]]
     result3 = precision_recall_curve(all_gts, all_preds)
     assert result3['ap'] == 0.0
-    if result3['precision'].size > 0:
-        assert result3['precision'][-1] == 0.0
+    
+    # Case 4: Empty image in ground truth
+    all_gts = [[{'category_id': 1, 'bbox': [10, 10, 20, 20]}], []]
+    result4 = precision_recall_curve(all_gts, all_preds)
+    assert result4['ap'] == 0.0  # Should be 0 since no matches
+    
+    # Case 5: Empty image in predictions
+    all_preds = [[{'category_id': 1, 'bbox': [12, 12, 18, 18], 'score': 0.9}], []]
+    result5 = precision_recall_curve(all_gts, all_preds)
+    assert result5['ap'] > 0  # Should have at least one match
 
 def test_pr_curves_early_return():
     """

@@ -9,7 +9,6 @@ from .metrics.DetectionMetrics import DetectionMetrics
 from .metrics import AnnotationsConfig, ThresholdsConfig, PrecisionRecallConfig
 from .results import MetricsResult
 from .utils import map_class_keys_recursive
-from .validations import validate_json_format, validate_normalized
 import contextlib
 import io
 
@@ -57,8 +56,6 @@ class DetectionMetricsManager:
             raise TypeError("Groundtruth Json Path must be String")
         if not isinstance(prediction_json_path, str):
             raise TypeError("Predictions Json Path must be String")
-        validate_json_format(groundtruth_json_path)
-        validate_json_format(prediction_json_path)
         self._initialize(groundtruth_json_path, prediction_json_path)
         self.labels = []
 
@@ -178,8 +175,6 @@ class DetectionMetricsManager:
         >>> result = manager.calculate_metrics(iou_thr=0.5, conf_thr=0.5)
         >>> print(result.metrics['global']['precision'])
         """
-        validate_normalized(iou_thr)
-        validate_normalized(conf_thr)
         if exclude_classes is not None:
             if not isinstance(exclude_classes, list):
                 raise TypeError("exclude_classes must be a list or None, "

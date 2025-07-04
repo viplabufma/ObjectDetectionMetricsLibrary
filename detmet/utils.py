@@ -1,3 +1,4 @@
+import math
 from typing import Any, List, Union
 import numpy as np
 
@@ -258,3 +259,75 @@ def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xy
         pred_boxes[:, 3] += pred_boxes[:, 1]  # y2 = y + h
 
     return vectorized_bbox_iou(gt_boxes, pred_boxes)
+
+def safe_convert_to_float(value: Union[int, float, str, np.number, bool]) -> float:
+    """
+    Safely convert various types to float with comprehensive validation.
+    
+    Parameters
+    ----------
+    value : Union[int, float, str, np.number, bool]
+        Input value to convert. Accepts:
+        - Numeric types (int, float, np.int, np.float, etc.)
+        - String representations of numbers
+        - Boolean values (True -> 1.0, False -> 0.0)
+    
+    Returns
+    -------
+    float
+        Converted float value
+    
+    Raises
+    ------
+    TypeError
+        If input type is not convertible
+    ValueError
+        If conversion fails or value is non-finite (NaN/inf)
+    
+    Examples
+    --------
+    >>> safe_convert_to_float(10)
+    10.0
+    >>> safe_convert_to_float("3.14")
+    3.14
+    >>> safe_convert_to_float(True)
+    1.0
+    >>> safe_convert_to_float(np.int32(5))
+    5.0
+    >>> safe_convert_to_float("invalid")
+    Traceback (most recent call last):
+        ...
+    ValueError: Could not convert to float: 'invalid'
+    >>> safe_convert_to_float(float('nan'))
+    Traceback (most recent call last):
+        ...
+    ValueError: Converted value is NaN
+    """
+    # Handle boolean values explicitly
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    
+    # Try direct conversion for known numeric types
+    if isinstance(value, (int, float, np.number)):
+        try:
+            result = float(value)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"Unsupported numeric type: {type(value).__name__}") from e
+    # Handle string conversion
+    elif isinstance(value, str):
+        try:
+            # Remove potential whitespace and commas
+            cleaned = value.strip().replace(',', '')
+            result = float(cleaned)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Could not convert to float: '{value}'") from e
+    else:
+        raise TypeError(f"Unsupported type: {type(value).__name__}")
+
+    # Validate finite number
+    if math.isnan(result):
+        raise ValueError("Converted value is NaN")
+    if math.isinf(result):
+        raise ValueError("Converted value is infinite")
+    
+    return result

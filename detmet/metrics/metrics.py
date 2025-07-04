@@ -1,9 +1,10 @@
+from detmet.validations import Boolean, BoundingBox, GroundTruthAnnotations, PrecisionList, PrecisionRecallResult, PredictionAnnotations, ProbabilityFloat, PositiveInteger, RecallList, validated
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Dict
 import numpy as np
-from detmet.validations import validate_bounding_boxes, validate_float_and_float_like, validate_int_and_int_like, validate_normalized, validate_number_is_not_NaN, validate_number_is_not_infinite, validate_positive
 
-def bbox_iou(box1: list[float], box2: list[float]) -> float:
+@validated
+def bbox_iou(box1: BoundingBox, box2: BoundingBox) -> ProbabilityFloat:
     """
     Calculate Intersection over Union (IoU) between two COCO-format bounding boxes.
 
@@ -31,9 +32,7 @@ def bbox_iou(box1: list[float], box2: list[float]) -> float:
     >>> box1 = [10, 10, 20, 20]
     >>> box2 = [15, 15, 20, 20]
     >>> iou = bbox_iou(box1, box2)
-    """
-    validate_bounding_boxes(box1, box2)
-    
+    """    
     x1, y1, w1, h1 = map(float, box1)
     x2, y2, w2, h2 = map(float, box2)
 
@@ -58,8 +57,8 @@ def bbox_iou(box1: list[float], box2: list[float]) -> float:
     # Return IoU
     return inter / union
 
-
-def precision(tp: int, fp: int) -> float:
+@validated
+def precision(tp: PositiveInteger, fp: PositiveInteger) -> ProbabilityFloat:
     """
     Compute precision metric.
 
@@ -94,17 +93,13 @@ def precision(tp: int, fp: int) -> float:
     >>> precision(0, 0)   # No predictions
     0.0
     """
-    validate_int_and_int_like(tp)
-    validate_int_and_int_like(fp)
-    validate_positive(tp)
-    validate_positive(fp)
 
     # Calculate precision
     denominator = tp + fp
     return tp / denominator if denominator > 0 else 0.0
 
-
-def recall(tp: int, fn: int) -> float:
+@validated
+def recall(tp: PositiveInteger, fn: PositiveInteger) -> ProbabilityFloat:
     """
     Compute recall metric.
 
@@ -139,16 +134,13 @@ def recall(tp: int, fn: int) -> float:
     >>> recall(0, 0)   # No actual positives
     0.0
     """
-    validate_int_and_int_like(tp)
-    validate_int_and_int_like(fn)
-    validate_positive(tp)
-    validate_positive(fn)    
+  
     # Calculate recall
     denominator = tp + fn
     return tp / denominator if denominator > 0 else 0.0
 
-
-def f1(precision_val: float, recall_val: float) -> float:
+@validated
+def f1(precision_val: ProbabilityFloat, recall_val: ProbabilityFloat) -> ProbabilityFloat:
     """
     Compute F1 score from precision and recall.
 
@@ -185,19 +177,13 @@ def f1(precision_val: float, recall_val: float) -> float:
     >>> f1(1.0, 1.0)  # Perfect precision and recall
     1.0
     """
-    validate_float_and_float_like(precision_val)
-    validate_float_and_float_like(recall_val)
-    validate_number_is_not_NaN(precision_val)
-    validate_number_is_not_NaN(recall_val)
-    validate_number_is_not_infinite(precision_val)
-    validate_number_is_not_infinite(recall_val)
-    validate_normalized(precision_val)
-    validate_normalized(recall_val)
+
     # Calculate F1 score
     denominator = precision_val + recall_val
     return 2 * precision_val * recall_val / denominator if denominator > 0 else 0.0
 
-def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
+@validated
+def precision_recall_f1(tp: PositiveInteger, fp: PositiveInteger, fn: PositiveInteger) -> tuple[ProbabilityFloat, ProbabilityFloat, ProbabilityFloat]:
     """
     Compute precision, recall, and F1 score together.
 
@@ -212,52 +198,41 @@ def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple[float, float, float]
 
     Returns
     -------
-    tuple
+    tuple[float, float, float]
         (precision, recall, F1) values
 
     Examples
     --------
     >>> p, r, f = precision_recall_f1(5, 2, 3)
+    >>> print(f"Precision: {p:.2f}, Recall: {r:.2f}, F1: {f:.2f}")
+    Precision: 0.71, Recall: 0.62, F1: 0.67
     """
-    # Type validation - allow int-like types (numpy integers, etc.)
-    values = [tp, fp, fn]
-    names = ['true positives', 'false positives', 'false negatives']
-    
-    for i, (val, name) in enumerate(zip(values, names)):
-        if not isinstance(val, (int, np.integer)) if 'numpy' in globals() else not isinstance(val, int):
-            try:
-                values[i] = int(val)
-            except (TypeError, ValueError):
-                raise TypeError(f"{name.capitalize()} must be integer, got {type(val).__name__}")
-    
-    # Value validation
-    if tp < 0:
-        raise ValueError(f"True positives must be non-negative, got {tp}")
-    if fp < 0:
-        raise ValueError(f"False positives must be non-negative, got {fp}")
-    if fn < 0:
-        raise ValueError(f"False negatives must be non-negative, got {fn}")
-    
     p = precision(tp, fp)
     r = recall(tp, fn)
     return p, r, f1(p, r)
 
-
+@validated
 def precision_recall_curve(
-    all_gts: List[List[dict]],
-    all_preds: List[List[dict]],
-    iou_threshold: float = 0.5,
-    class_agnostic: bool = False
-) -> Dict[str, Any]:
+    all_gts: GroundTruthAnnotations,
+    all_preds: PredictionAnnotations,
+    iou_threshold: ProbabilityFloat = 0.5,
+    class_agnostic: Boolean = False
+) -> PrecisionRecallResult:
     """
     Compute precision-recall curve data for object detection evaluation.
 
     Parameters
     ----------
-    all_gts : List[List[dict]]
-        List of ground truths per image. Each dict must contain 'bbox' and 'category_id'
-    all_preds : List[List[dict]]
-        List of predictions per image. Each dict must contain 'bbox', 'score', and 'category_id'
+    all_gts : list[list[dict]]
+        List of ground truths per image. Each dict must contain:
+        - 'bbox': list[float] - [x, y, width, height]
+        - 'category_id': int
+        - Optional: 'iscrowd' (1 indicates crowd annotation)
+    all_preds : list[list[dict]]
+        List of predictions per image. Each dict must contain:
+        - 'bbox': list[float] - [x, y, width, height]
+        - 'score': float - Confidence score
+        - 'category_id': int
     iou_threshold : float, optional
         IoU threshold for true positive, by default 0.5
     class_agnostic : bool, optional
@@ -265,13 +240,13 @@ def precision_recall_curve(
 
     Returns
     -------
-    Dict[str, Any]
+    PrecisionRecallResult
         Dictionary containing:
-        - 'precision': Array of precision values
-        - 'recall': Array of recall values
-        - 'thresholds': Array of confidence thresholds
-        - 'ap': Global Average Precision
-        - 'per_class': Dict of per-class AP values
+        - 'precision': np.ndarray[float] - Precision values at each threshold
+        - 'recall': np.ndarray[float] - Recall values at each threshold
+        - 'thresholds': np.ndarray[float] - Confidence thresholds
+        - 'ap': float - Global Average Precision
+        - 'per_class': dict[int, float] - Per-class AP values
 
     Raises
     ------
@@ -286,145 +261,11 @@ def precision_recall_curve(
     - Implements COCO-style 101-point interpolation for AP calculation
     - Handles both class-aware and class-agnostic evaluation
     - Excludes crowd annotations from matching
+    - Per-class AP is computed using global prediction order
+    - Validates inputs using detmet.validations types
     """
-    # Input validation
-    if not isinstance(all_gts, list) or not isinstance(all_preds, list):
-        raise TypeError("all_gts and all_preds must be lists")
-        
-    if len(all_gts) == 0:
-        raise ValueError("Groundtruth lists cannot be empty")
-    
-    if len(all_preds) == 0:
-        raise ValueError("Predictions lists cannot be empty")
-    
-    # Validate IoU threshold
-    if not isinstance(iou_threshold, (int, float)):
-        raise TypeError("iou_threshold must be numeric")
-    
-    if not (0.0 <= iou_threshold <= 1.0):
-        raise ValueError(f"iou_threshold must be between 0.0 and 1.0, got {iou_threshold}")
-    
-    if not isinstance(class_agnostic, bool):
-        raise TypeError("class_agnostic must be boolean")
-    
-    # Validate structure of inputs
-    for img_id, (gts, preds) in enumerate(zip(all_gts, all_preds)):
-        if not isinstance(gts, list) or not isinstance(preds, list):
-            raise TypeError(f"Image {img_id}: GTs and predictions must be lists")
-        
-        # Validate GT structure
-        for gt_id, gt in enumerate(gts):
-            if not isinstance(gt, dict):
-                raise TypeError(f"Image {img_id}, GT {gt_id}: must be dict")
-            
-            if 'bbox' not in gt:
-                raise ValueError(f"Image {img_id}, GT {gt_id}: missing 'bbox' key")
-            
-            if not class_agnostic and 'category_id' not in gt:
-                raise ValueError(f"Image {img_id}, GT {gt_id}: missing 'category_id' key")
-            
-            if not isinstance(gt['bbox'], (list, tuple)) or len(gt['bbox']) != 4:
-                raise ValueError(f"Image {img_id}, GT {gt_id}: 'bbox' must be list/tuple of 4 elements")
-        
-        # Validate prediction structure
-        for pred_id, pred in enumerate(preds):
-            if not isinstance(pred, dict):
-                raise TypeError(f"Image {img_id}, Pred {pred_id}: must be dict")
-            
-            required_keys = ['bbox', 'score'] + ([] if class_agnostic else ['category_id'])
-            for key in required_keys:
-                if key not in pred:
-                    raise ValueError(f"Image {img_id}, Pred {pred_id}: missing '{key}' key")
-            
-            if not isinstance(pred['bbox'], (list, tuple)) or len(pred['bbox']) != 4:
-                raise ValueError(f"Image {img_id}, Pred {pred_id}: 'bbox' must be list/tuple of 4 elements")
-            
-            try:
-                float(pred['score'])
-            except (TypeError, ValueError):
-                raise ValueError(f"Image {img_id}, Pred {pred_id}: 'score' must be numeric")
-    
-    # Early return if no predictions
-    total_preds = sum(len(preds) for preds in all_preds)
-    if total_preds == 0:
-        return {
-            'precision': np.array([]),
-            'recall': np.array([]),
-            'thresholds': np.array([]),
-            'ap': 0.0,
-            'per_class': {}
-        }
-    
-    # Flatten and filter predictions
-    flat_preds = []
-    for img_id, preds in enumerate(all_preds):
-        for pred in preds:
-            # Skip invalid scores
-            score = float(pred['score'])
-            if score != score or score == float('inf') or score == float('-inf'):  # NaN or infinity
-                continue
-                
-            flat_preds.append({
-                'img_id': img_id,
-                'bbox': pred['bbox'],
-                'score': score,
-                'class_id': 0 if class_agnostic else pred['category_id']
-            })
-
-    # Early return if no valid predictions
-    if not flat_preds:
-        return {
-            'precision': np.array([]),
-            'recall': np.array([]),
-            'thresholds': np.array([]),
-            'ap': 0.0,
-            'per_class': {}
-        }
-
-    # Sort predictions by confidence descending
-    flat_preds.sort(key=lambda x: x['score'], reverse=True)
-    pred_scores = [p['score'] for p in flat_preds]
-
-    # Prepare ground truth structure
-    gt_by_class = defaultdict(list)
-    total_gts = 0
-    class_gt_counts = defaultdict(int)
-
-    for img_id, gts in enumerate(all_gts):
-        for gt in gts:
-            # Skip crowd annotations
-            if gt.get('iscrowd', 0) == 1:
-                continue
-
-            class_id = 0 if class_agnostic else gt['category_id']
-            gt_by_class[class_id].append({
-                'img_id': img_id,
-                'bbox': gt['bbox'],
-                'matched': False  # Track matching status
-            })
-            class_gt_counts[class_id] += 1
-            total_gts += 1
-
-    # Early return if no ground truths
-    if total_gts == 0:
-        return {
-            'precision': np.array([0.0] * len(flat_preds)),
-            'recall': np.array([0.0] * len(flat_preds)),
-            'thresholds': np.array(pred_scores),
-            'ap': 0.0,
-            'per_class': {}
-        }
-
-    # Initialize result storage
-    precision_vals = []
-    recall_vals = []
-    class_data = defaultdict(lambda: {
-        'tp': 0, 'fp': 0,
-        'precision': [], 'recall': []
-    })
-
-    # Process predictions in descending confidence order
-    for pred in flat_preds:
+    def process_one_prediction(pred, gt_by_class, class_data, iou_threshold):
+        """Process single prediction and update TP/FP counts."""
         class_id = pred['class_id']
         best_iou = 0.0
         best_gt_idx = -1
@@ -440,7 +281,6 @@ def precision_recall_curve(
                     best_iou = iou
                     best_gt_idx = gt_idx
             except Exception:
-                # Skip invalid bounding boxes
                 continue
 
         # Update match status
@@ -451,65 +291,140 @@ def precision_recall_curve(
         else:
             class_data[class_id]['fp'] += 1
 
-        # Compute precision/recall for each class
+    def update_metrics(class_data, class_gt_counts, total_gts):
+        """Compute precision/recall for all classes and globally."""
+        global_tp = 0
+        global_fp = 0
+        
+        # Update per-class metrics
         for cid, data in class_data.items():
             tp = data['tp']
             fp = data['fp']
-            fn = class_gt_counts[cid] - tp
+            gt_count = class_gt_counts.get(cid, 0)
+            fn = gt_count - tp
 
             p_val = tp / (tp + fp) if (tp + fp) > 0 else 0.0
             r_val = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
             data['precision'].append(p_val)
             data['recall'].append(r_val)
+            global_tp += tp
+            global_fp += fp
 
-        # Compute global precision/recall
-        global_tp = sum(data['tp'] for data in class_data.values())
-        global_fp = sum(data['fp'] for data in class_data.values())
+        # Compute global metrics
         global_fn = total_gts - global_tp
-
         global_p = global_tp / (global_tp + global_fp) if (global_tp + global_fp) > 0 else 0.0
         global_r = global_tp / (global_tp + global_fn) if (global_tp + global_fn) > 0 else 0.0
+        return global_p, global_r
+    
+    def accumulate_metrics(flat_preds, gt_by_class, class_gt_counts, total_gts, iou_threshold):
+        """Orchestrate metrics accumulation over all predictions."""
+        precision_vals = []
+        recall_vals = []
+        class_data = defaultdict(lambda: {'tp': 0, 'fp': 0, 'precision': [], 'recall': []})
+        
+        for pred in flat_preds:
+            process_one_prediction(pred, gt_by_class, class_data, iou_threshold)
+            global_p, global_r = update_metrics(class_data, class_gt_counts, total_gts)
+            precision_vals.append(global_p)
+            recall_vals.append(global_r)
+            
+        return precision_vals, recall_vals, class_data
+    
+    def process_predictions(all_preds, class_agnostic):
+        """Flatten, filter and sort predictions"""
+        flat_preds = []
+        for img_id, preds in enumerate(all_preds):
+            for pred in preds:
+                flat_preds.append({
+                    'img_id': PositiveInteger.validate(img_id),
+                    'bbox': BoundingBox.validate(pred['bbox']),
+                    'score': ProbabilityFloat.validate(pred['score']),
+                    'class_id': 0 if class_agnostic else PositiveInteger.validate(pred['category_id'])
+                })
+        
+        if not flat_preds:
+            return [], []
+        
+        flat_preds.sort(key=lambda x: x['score'], reverse=True)
+        pred_scores = [p['score'] for p in flat_preds]
+        return flat_preds, pred_scores
+    
+    def process_ground_truths(all_gts, class_agnostic):
+        """Prepare ground truth structure and count instances"""
+        gt_by_class, class_gt_counts = defaultdict(list), defaultdict(int)
+        total_gts = 0
 
-        precision_vals.append(global_p)
-        recall_vals.append(global_r)
+        for img_id, gts in enumerate(all_gts):
+            for gt in gts:
+                if PositiveInteger.validate(gt.get('iscrowd', 0)) == 1: continue
+                class_id = 0 if class_agnostic else PositiveInteger.validate(gt['category_id'])
+                gt_by_class[class_id].append({
+                    'img_id': PositiveInteger.validate(img_id),
+                    'bbox': BoundingBox.validate(gt['bbox']),
+                    'matched': False
+                })
+                class_gt_counts[class_id] += 1
+                total_gts += 1
+        return gt_by_class, class_gt_counts, total_gts
 
-    # Compute AP with proper interpolation
-    try:
-        ap = average_precision(recall_vals, precision_vals)
-    except Exception:
-        ap = 0.0
-
-    per_class_ap = {}
-
-    # Compute per-class AP
-    for class_id, data in class_data.items():
-        if class_gt_counts[class_id] > 0:
-            try:
+    def empty_result():
+        """Return empty result structure when no predictions exist"""
+        return {
+            'precision': np.array([]),
+            'recall': np.array([]),
+            'thresholds': np.array([]),
+            'ap': 0.0,
+            'per_class': {}
+        }
+    
+    def empty_result_with_length(length, pred_scores):
+        """Return result structure for zero ground truths"""
+        return {
+            'precision': np.array([0.0] * length),
+            'recall': np.array([0.0] * length),
+            'thresholds': np.array(pred_scores),
+            'ap': 0.0,
+            'per_class': {}
+    }
+    def per_class_ap(class_data, class_gt_counts) -> Dict:
+        """Compute per-class AP from accumulated metrics"""
+        per_class_ap = {}
+        for class_id, data in class_data.items():
+            if class_gt_counts[class_id] > 0:
                 per_class_ap[class_id] = average_precision(data['recall'], data['precision'])
-            except Exception:
+            else:
                 per_class_ap[class_id] = 0.0
-        else:
-            per_class_ap[class_id] = 0.0
-
+        return per_class_ap
+    
+    flat_preds, pred_scores = process_predictions(all_preds, class_agnostic)
+    if not flat_preds: return empty_result()
+    gt_by_class, class_gt_counts, total_gts = process_ground_truths(all_gts, class_agnostic)
+    if total_gts == 0: return empty_result_with_length(len(flat_preds), pred_scores)
+    
+    precision_vals, recall_vals, class_data = accumulate_metrics(
+        flat_preds, gt_by_class, class_gt_counts, total_gts, iou_threshold
+    )
+    ap = average_precision(recall_vals, precision_vals)
     return {
         'precision': np.array(precision_vals),
         'recall': np.array(recall_vals),
         'thresholds': np.array(pred_scores),
         'ap': ap,
-        'per_class': per_class_ap
+        'per_class': per_class_ap(class_data, class_gt_counts)
     }
 
 
-def average_precision(recall: List[float], precision: List[float]) -> float:
+@validated
+def average_precision(recall: RecallList, precision: PrecisionList) -> ProbabilityFloat:
     """
     Compute Average Precision (AP) using 101-point interpolation (COCO standard).
     
     Parameters
     ----------
-    recall : List[float]
+    recall : list[float]
         Recall values at different confidence thresholds
-    precision : List[float]
+    precision : list[float]
         Precision values at different confidence thresholds
     
     Returns
@@ -529,60 +444,18 @@ def average_precision(recall: List[float], precision: List[float]) -> float:
     - Implements COCO-style 101-point interpolation
     - Ensures precision is monotonically decreasing
     - Handles edge cases with no detections
+    - Validates inputs using detmet.validations types
     """
-    
-    # Type Validation
-    if not isinstance(recall, list):
-        raise TypeError(f"recall deve ser uma lista, recebido: {type(recall).__name__}")
-    
-    if not isinstance(precision, list):
-        raise TypeError(f"precision deve ser uma lista, recebido: {type(precision).__name__}")
-    
-    # Len Validation
-    if len(recall) == 0:
-        raise ValueError("recall não pode ser uma lista vazia")
-    
-    if len(precision) == 0:
-        raise ValueError("precision não pode ser uma lista vazia")
-    
+    # Cross-length validation
     if len(recall) != len(precision):
-        raise ValueError(f"recall e precision devem ter o mesmo tamanho. "
-                        f"recall: {len(recall)}, precision: {len(precision)}")
-    
-    # Validation of types of elements
-    for i, r in enumerate(recall):
-        if not isinstance(r, (int, float, np.number)):
-            raise TypeError(f"recall[{i}] deve ser numérico, recebido: {type(r).__name__}")
-        if not np.isfinite(r):
-            raise ValueError(f"recall[{i}] deve ser finito, recebido: {r}")
-    
-    for i, p in enumerate(precision):
-        if not isinstance(p, (int, float, np.number)):
-            raise TypeError(f"precision[{i}] deve ser numérico, recebido: {type(p).__name__}")
-        if not np.isfinite(p):
-            raise ValueError(f"precision[{i}] deve ser finito, recebido: {p}")
-    
-    # Interval validation
-    for i, r in enumerate(recall):
-        if not (0.0 <= r <= 1.0):
-            raise ValueError(f"recall[{i}] deve estar entre 0 e 1, recebido: {r}")
-    
-    for i, p in enumerate(precision):
-        if not (0.0 <= p <= 1.0):
-            raise ValueError(f"precision[{i}] deve estar entre 0 e 1, recebido: {p}")
-    
-    # Recall order validation (must be non-descending)
-    for i in range(1, len(recall)):
-        if recall[i] < recall[i-1]:
-            raise ValueError(f"recall deve ser não-decrescente. "
-                           f"recall[{i-1}]={recall[i-1]} > recall[{i}]={recall[i]}")
+        raise ValueError(
+            f"recall and precision must have the same length. "
+            f"recall: {len(recall)}, precision: {len(precision)}"
+        )
     
     # Convert to numpy
-    try:
-        recall_np = np.array(recall, dtype=np.float64)
-        precision_np = np.array(precision, dtype=np.float64)
-    except (ValueError, TypeError) as e:
-        raise ValueError(f"Erro ao converter listas para arrays numpy: {e}")
+    recall_np = np.array(recall, dtype=np.float64)
+    precision_np = np.array(precision, dtype=np.float64)
     
     # Pad with 0 and 1 endpoints
     r = np.array([0.0] + list(recall_np) + [1.0])
@@ -598,8 +471,4 @@ def average_precision(recall: List[float], precision: List[float]) -> float:
     
     # Final result Validation
     ap_score = np.mean(p_interp)
-    
-    if not np.isfinite(ap_score):
-        raise ValueError(f"Resultado inválido: {ap_score}")
-    
-    return float(ap_score)
+    return ProbabilityFloat.validate(ap_score)
