@@ -11,7 +11,7 @@ Description:
 '''
 import numpy as np
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import contextlib
@@ -55,7 +55,7 @@ def bbox_iou(box1: list, box2: list) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
+def vectorized_bbox_iou_xyxy(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
     """
     Compute IoU between multiple ground truth and predicted bounding boxes.
 
@@ -117,19 +117,67 @@ def vectorized_bbox_iou(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndar
     return inter_area / np.maximum(union_area, 1e-7)
 
 
-def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xyxy: bool = True) -> np.ndarray:
+def compute_iou_matrix_xyxy(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
     """
-    Compute IoU matrix between ground truth and predicted annotations.
+    Compute IoU matrix for boxes already in xyxy format.
+
+    Parameters
+    ----------
+    gt_boxes : np.ndarray
+        [N, 4] array with ground truth boxes in [x1, y1, x2, y2]
+    pred_boxes : np.ndarray
+        [M, 4] array with prediction boxes in [x1, y1, x2, y2]
+
+    Returns
+    -------
+    np.ndarray
+        IoU matrix of shape (N, M)
+
+    Notes
+    -----
+    This API does not perform format conversion.
+    """
+    return vectorized_bbox_iou_xyxy(np.asarray(gt_boxes, dtype=np.float32), np.asarray(pred_boxes, dtype=np.float32))
+
+
+def xywh_to_xyxy(boxes: np.ndarray) -> np.ndarray:
+    """
+    Convert bounding boxes from COCO xywh ([x, y, w, h]) to xyxy ([x1, y1, x2, y2]).
+
+    Parameters
+    ----------
+    boxes : np.ndarray or array-like
+        Array of shape (N, 4) or (4,) with boxes in [x, y, w, h].
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (N, 4) with boxes in [x1, y1, x2, y2] as float32.
+
+    Notes
+    -----
+    - Works with empty inputs and preserves shape (returns (0, 4) for empty input).
+    - Makes a copy before modifying to avoid side-effects.
+    """
+    arr = np.asarray(boxes, dtype=np.float32)
+    if arr.size == 0:
+        return arr.reshape(0, 4)
+    arr = arr.reshape(-1, 4).copy()
+    arr[:, 2] = arr[:, 0] + arr[:, 2]
+    arr[:, 3] = arr[:, 1] + arr[:, 3]
+    return arr
+
+
+def compute_iou_matrix_xywh(gt_anns: List[dict], pred_anns: List[dict]) -> np.ndarray:
+    """
+    Compute IoU matrix between COCO annotations in xywh format.
 
     Parameters
     ----------
     gt_anns : List[dict]
-        List of ground truth annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
+        List of ground truth annotations, each containing 'bbox' in [x, y, w, h]
     pred_anns : List[dict]
-        List of predicted annotations, each containing 'bbox' in [x, y, w, h] or [x1, y1, x2, y2]
-    convert_to_xyxy : bool, optional
-        If True, convert bboxes from [x, y, w, h] to [x1, y1, x2, y2]. If False, assume bboxes
-        are already in [x1, y1, x2, y2], by default True
+        List of predicted annotations, each containing 'bbox' in [x, y, w, h]
 
     Returns
     -------
@@ -140,7 +188,7 @@ def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xy
     --------
     >>> gt = [{'bbox': [10, 10, 20, 20]}]
     >>> pred = [{'bbox': [12, 12, 18, 18]}]
-    >>> iou_matrix = compute_iou_matrix(gt, pred)
+    >>> iou_matrix = compute_iou_matrix_xywh(gt, pred)
     """
     if not gt_anns and not pred_anns:
         return np.zeros((0, 0))
@@ -148,14 +196,43 @@ def compute_iou_matrix(gt_anns: List[dict], pred_anns: List[dict], convert_to_xy
     gt_boxes = np.array([g['bbox'] for g in gt_anns], dtype=np.float32)
     pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
 
-    if convert_to_xyxy and gt_boxes.size > 0:
-        gt_boxes[:, 2] += gt_boxes[:, 0]  # x2 = x + w
-        gt_boxes[:, 3] += gt_boxes[:, 1]  # y2 = y + h
-    if convert_to_xyxy and pred_boxes.size > 0:
-        pred_boxes[:, 2] += pred_boxes[:, 0]  # x2 = x + w
-        pred_boxes[:, 3] += pred_boxes[:, 1]  # y2 = y + h
+    gt_xyxy = xywh_to_xyxy(gt_boxes)
+    pred_xyxy = xywh_to_xyxy(pred_boxes)
 
-    return vectorized_bbox_iou(gt_boxes, pred_boxes)
+    return compute_iou_matrix_xyxy(gt_xyxy, pred_xyxy)
+
+
+def compute_iou_matrix(
+    gt_anns: List[dict],
+    pred_anns: List[dict],
+    bbox_format: Literal['xywh', 'xyxy'] = 'xywh'
+) -> np.ndarray:
+    """
+    Compute IoU matrix between GT and predicted annotations with specified bbox format.
+    Parameters
+    ----------
+    gt_anns : List[dict]
+        List of GT annotations with 'bbox'
+    pred_anns : List[dict]
+        List of prediction annotations with 'bbox'
+    bbox_format : Literal['xywh', 'xyxy'], optional
+        Format of input bboxes. 'xywh' expects COCO [x, y, w, h] (default),
+        'xyxy' expects [x1, y1, x2, y2]
+
+    Returns
+    -------
+    np.ndarray
+        IoU matrix of shape (num_gt, num_pred)
+    """
+    if bbox_format == 'xywh':
+        return compute_iou_matrix_xywh(gt_anns, pred_anns)
+
+    if bbox_format == 'xyxy':
+        gt_boxes = np.array([g['bbox'] for g in gt_anns], dtype=np.float32)
+        pred_boxes = np.array([p['bbox'] for p in pred_anns], dtype=np.float32)
+        return compute_iou_matrix_xyxy(gt_boxes, pred_boxes)
+
+    raise ValueError("bbox_format must be either 'xywh' or 'xyxy'")
 
 
 def precision(tp: int, fp: int) -> float:
@@ -636,8 +713,8 @@ class DetectionMetrics:
         # Update support counts
         self.update_support_number(gt)
 
-        # Calculate IoU matrix
-        iou_mat_full = compute_iou_matrix(gt, pr)
+        # Calculate IoU matrix from COCO-format xywh annotations
+        iou_mat_full = compute_iou_matrix_xywh(gt, pr)
 
         # Compute detection confusion
         det_conf = self._compute_detection_confusion(gt, pr, iou_mat_full)

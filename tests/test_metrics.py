@@ -6,7 +6,12 @@
 import numpy as np
 import pytest
 from detmet import DetectionMetrics, bbox_iou
-from detmet.metrics import compute_precision_recall_curve
+from detmet.metrics import (
+    compute_iou_matrix,
+    compute_iou_matrix_xywh,
+    compute_iou_matrix_xyxy,
+    compute_precision_recall_curve,
+)
 from pycocotools.coco import COCO
 
 def test_multi_image_processing():
@@ -266,6 +271,64 @@ def test_bbox_iou_calculation():
     # Partial overlap
     iou3 = bbox_iou([10, 10, 20, 20], [20, 20, 20, 20])
     assert iou3 > 0.0 and iou3 < 1.0
+
+
+def test_compute_iou_matrix_xywh_matches_bbox_iou():
+    """IoU matrix for COCO xywh must match scalar bbox_iou for the same pair."""
+    gt_anns = [{'bbox': [10, 10, 20, 20]}]
+    pred_anns = [{'bbox': [15, 15, 20, 20]}]
+
+    iou_mat = compute_iou_matrix_xywh(gt_anns, pred_anns)
+    expected_iou = bbox_iou(gt_anns[0]['bbox'], pred_anns[0]['bbox'])
+
+    assert iou_mat.shape == (1, 1)
+    assert iou_mat[0, 0] == pytest.approx(expected_iou)
+
+
+def test_compute_iou_matrix_xyxy_uses_direct_xyxy():
+    """IoU matrix for xyxy inputs should be computed directly with no conversion."""
+    gt_boxes = np.array([[10, 10, 30, 30]], dtype=np.float32)
+    pred_boxes = np.array([[15, 15, 35, 35]], dtype=np.float32)
+
+    iou_mat = compute_iou_matrix_xyxy(gt_boxes, pred_boxes)
+    expected_iou = 225.0 / 575.0
+
+    assert iou_mat.shape == (1, 1)
+    assert iou_mat[0, 0] == pytest.approx(expected_iou)
+
+
+def test_compute_iou_matrix_xywh_and_xyxy_are_equivalent():
+    """Equivalent boxes in xywh/xyxy must produce the same IoU matrix."""
+    gt_anns_xywh = [{'bbox': [10, 10, 20, 20]}]
+    pred_anns_xywh = [{'bbox': [15, 15, 20, 20]}]
+
+    iou_xywh = compute_iou_matrix_xywh(gt_anns_xywh, pred_anns_xywh)
+
+    gt_boxes_xyxy = np.array([[10, 10, 30, 30]], dtype=np.float32)
+    pred_boxes_xyxy = np.array([[15, 15, 35, 35]], dtype=np.float32)
+    iou_xyxy = compute_iou_matrix_xyxy(gt_boxes_xyxy, pred_boxes_xyxy)
+
+    assert np.allclose(iou_xywh, iou_xyxy)
+
+
+def test_compute_iou_matrix_wrapper_delegates_by_format():
+    """Backward-compatible wrapper should delegate to the explicit format APIs."""
+    gt_anns_xywh = [{'bbox': [10, 10, 20, 20]}]
+    pred_anns_xywh = [{'bbox': [15, 15, 20, 20]}]
+
+    wrapped_xywh = compute_iou_matrix(gt_anns_xywh, pred_anns_xywh)
+    explicit_xywh = compute_iou_matrix_xywh(gt_anns_xywh, pred_anns_xywh)
+    assert np.allclose(wrapped_xywh, explicit_xywh)
+
+    gt_anns_xyxy = [{'bbox': [10, 10, 30, 30]}]
+    pred_anns_xyxy = [{'bbox': [15, 15, 35, 35]}]
+    wrapped_xyxy = compute_iou_matrix(gt_anns_xyxy, pred_anns_xyxy, bbox_format='xyxy')
+
+    explicit_xyxy = compute_iou_matrix_xyxy(
+        np.array([g['bbox'] for g in gt_anns_xyxy], dtype=np.float32),
+        np.array([p['bbox'] for p in pred_anns_xyxy], dtype=np.float32),
+    )
+    assert np.allclose(wrapped_xyxy, explicit_xyxy)
 
 def test_results_dict_property():
     """Tests comprehensive results dictionary with structured keys.
