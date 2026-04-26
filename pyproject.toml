@@ -27,6 +27,7 @@ dependencies = [
     "matplotlib>=3.10.0",
     "seaborn>=0.13.0",
     "pycocotools>=2.0.10",
+    "pytest>=9.0.3",
 ]
 
 [project.optional-dependencies]

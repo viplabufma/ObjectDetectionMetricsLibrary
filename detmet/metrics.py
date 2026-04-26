@@ -371,150 +371,178 @@ def compute_precision_recall_curve(
     - Handles both class-aware and class-agnostic evaluation
     - Excludes crowd annotations from matching
     """
-    # Flatten and filter predictions
-    flat_preds = []
-    for img_id, preds in enumerate(all_preds):
-        for p in preds:
-            flat_preds.append({
-                'img_id': img_id,
-                'bbox': p['bbox'],
-                'score': p['score'],
-                'class_id': 0 if class_agnostic else p['category_id']
-            })
+    # Convenience wrapper: convert list-of-dicts to temporary COCO objects
+    if not all_gts or not all_preds:
+        return {
+            'precision': np.array([]),
+            'recall': np.array([]),
+            'thresholds': np.array([]),
+            'ap': 0.0,
+            'per_class': {}
+        }
 
-    # Sort predictions by confidence descending
-    flat_preds.sort(key=lambda x: x['score'], reverse=True)
-    pred_scores = [p['score'] for p in flat_preds]
+    gt_coco = _build_coco_from_lists(all_gts, is_predictions=False)
+    pred_coco = _build_coco_from_lists(all_preds, is_predictions=True)
 
-    # Prepare ground truth structure
-    gt_by_class = defaultdict(list)
-    total_gts = 0
-    class_gt_counts = defaultdict(int)
+    if gt_coco is None or pred_coco is None or len(gt_coco.getImgIds()) == 0:
+        return {
+            'precision': np.array([]),
+            'recall': np.array([]),
+            'thresholds': np.array([]),
+            'ap': 0.0,
+            'per_class': {}
+        }
 
-    for img_id, gts in enumerate(all_gts):
-        for gt in gts:
-            if gt.get('iscrowd', 0) == 1:
-                continue
+    # Run COCOeval at a single IoU threshold and extract PR data
+    with io.StringIO() as buf, contextlib.redirect_stdout(buf):
+        evaluator = COCOeval(gt_coco, pred_coco, 'bbox')
+        evaluator.params.iouThrs = np.array([iou_threshold])
+        if class_agnostic:
+            evaluator.params.useCats = 0
+        evaluator.evaluate()
+        evaluator.accumulate()
 
-            class_id = 0 if class_agnostic else gt['category_id']
-            gt_by_class[class_id].append({
-                'img_id': img_id,
-                'bbox': gt['bbox'],
-                'matched': False  # Track matching status
-            })
-            class_gt_counts[class_id] += 1
-            total_gts += 1
+    precision_data, recall_data, per_class_ap = _extract_pr_curve_from_cocoeval(
+        evaluator, all_gts, all_preds
+    )
 
-    # Initialize result storage
-    precision_vals = []
-    recall_vals = []
-    class_data = defaultdict(lambda: {
-        'tp': 0, 'fp': 0,
-        'precision': [], 'recall': []
-    })
+    ap = float(np.mean(precision_data)) if precision_data.size > 0 else 0.0
 
-    # Process predictions in descending confidence order
-    for _, pred in enumerate(flat_preds):
-        class_id = pred['class_id']
-        best_iou = 0.0
-        best_gt_idx = -1
-
-        # Find best unmatched GT in same image and class
-        for gt_idx, gt in enumerate(gt_by_class[class_id]):
-            if gt['img_id'] != pred['img_id'] or gt['matched']:
-                continue
-
-            iou = bbox_iou(gt['bbox'], pred['bbox'])
-            if iou > best_iou:
-                best_iou = iou
-                best_gt_idx = gt_idx
-
-        # Update match status
-        is_tp = best_iou >= iou_threshold
-        if is_tp and best_gt_idx != -1:
-            gt_by_class[class_id][best_gt_idx]['matched'] = True
-            class_data[class_id]['tp'] += 1
-        else:
-            class_data[class_id]['fp'] += 1
-
-        # Compute precision/recall for each class
-        for cid, data in class_data.items():
-            tp = data['tp']
-            fp = data['fp']
-            fn = class_gt_counts[cid] - tp
-
-            p_val = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            r_val = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-            data['precision'].append(p_val)
-            data['recall'].append(r_val)
-
-        # Compute global precision/recall
-        global_tp = sum(data['tp'] for data in class_data.values())
-        global_fp = sum(data['fp'] for data in class_data.values())
-        global_fn = total_gts - global_tp
-
-        global_p = global_tp / (global_tp + global_fp) if (global_tp + global_fp) > 0 else 0.0
-        global_r = global_tp / (global_tp + global_fn) if (global_tp + global_fn) > 0 else 0.0
-
-        precision_vals.append(global_p)
-        recall_vals.append(global_r)
-
-    # Compute AP with proper interpolation
-    ap = _compute_ap(recall_vals, precision_vals)
-    per_class_ap = {}
-
-    # Compute per-class AP
-    for class_id, data in class_data.items():
-        if class_gt_counts[class_id] > 0:
-            per_class_ap[class_id] = _compute_ap(data['recall'], data['precision'])
-        else:
-            per_class_ap[class_id] = 0.0
+    # Build confidence thresholds from predictions (unique sorted desc)
+    all_pred_scores = []
+    for preds in all_preds:
+        for pred in preds:
+            all_pred_scores.append(pred.get('score', 0.0))
+    all_pred_scores = sorted(set(all_pred_scores), reverse=True)
 
     return {
-        'precision': np.array(precision_vals),
-        'recall': np.array(recall_vals),
-        'thresholds': np.array(pred_scores),
+        'precision': precision_data,
+        'recall': recall_data,
+        'thresholds': np.array(all_pred_scores),
         'ap': ap,
         'per_class': per_class_ap
     }
 
-
-def _compute_ap(recall: list, precision: list) -> float:
+def _build_coco_from_lists(data: List[List[dict]], is_predictions: bool) -> COCO:
     """
-    Compute Average Precision (AP) using 101-point interpolation (COCO standard).
+    Build a temporary COCO object from list-of-dicts annotations/predictions.
 
-    Parameters
-    ----------
-    recall : list
-        Recall values at different confidence thresholds
-    precision : list
-        Precision values at different confidence thresholds
-
-    Returns
-    -------
-    float
-        Average Precision (AP) score
-
-    Notes
-    -----
-    - Implements COCO-style 101-point interpolation
-    - Ensures precision is monotonically decreasing
-    - Handles edge cases with no detections
+    Returns None if no annotations/predictions present.
     """
-    # Pad with 0 and 1 endpoints
-    r = np.array([0.0] + recall + [1.0])
-    p = np.array([0.0] + precision + [0.0])
+    coco = COCO()
+    images = {}
+    annotations = []
+    categories = set()
+    ann_id = 1
 
-    # Ensure monotonic decreasing precision
-    for i in range(len(p) - 2, -1, -1):
-        p[i] = max(p[i], p[i + 1])
+    for img_id, items in enumerate(data):
+        if not items:
+            continue
+        images[img_id] = {
+            'id': img_id,
+            'file_name': f'image_{img_id}.jpg',
+            'width': 640,
+            'height': 480
+        }
+        for item in items:
+            cat_id = item.get('category_id', 0)
+            categories.add(cat_id)
+            ann = {
+                'id': ann_id,
+                'image_id': img_id,
+                'category_id': cat_id,
+                'bbox': item['bbox'],
+                'area': float(item['bbox'][2] * item['bbox'][3]),
+                'iscrowd': int(item.get('iscrowd', 0))
+            }
+            if is_predictions:
+                ann['score'] = float(item.get('score', 0.0))
+            annotations.append(ann)
+            ann_id += 1
 
-    # Create 101 recall points
-    r_interp = np.linspace(0, 1, 101)
-    p_interp = np.interp(r_interp, r, p)
+    if not annotations:
+        return None
 
-    return np.mean(p_interp)
+    dataset = {
+        'info': {'description': 'Temporary COCO dataset'},
+        'images': list(images.values()),
+        'annotations': annotations,
+        'categories': [{'id': cid, 'name': f'class_{cid}'} for cid in sorted(categories)]
+    }
+
+    coco.dataset = dataset
+    coco.createIndex()
+    return coco
+
+
+def _extract_pr_curve_from_cocoeval(
+    evaluator: 'COCOeval',
+    all_gts: List[List[dict]],
+    all_preds: List[List[dict]]
+) -> tuple:
+    """
+    Extract global precision/recall arrays and per-class AP from a COCOeval object.
+    Returns (precision_array, recall_array, per_class_ap_dict).
+    """
+    # Collect classes present in inputs
+    all_classes = set()
+    for gts in all_gts:
+        for gt in gts:
+            all_classes.add(gt.get('category_id', 0))
+    for preds in all_preds:
+        for pred in preds:
+            all_classes.add(pred.get('category_id', 0))
+
+    if not hasattr(evaluator, 'eval') or 'precision' not in evaluator.eval:
+        return np.array([]), np.array([]), {}
+
+    precision_array = evaluator.eval['precision']
+    rec_thrs = evaluator.params.recThrs
+
+    # Determine indices for area='all' and maxDets=100
+    try:
+        aind = [i for i, label in enumerate(evaluator.params.areaRngLbl) if label == 'all'][0]
+    except Exception:
+        aind = 0
+    try:
+        mind = [i for i, m in enumerate(evaluator.params.maxDets) if m == 100][0]
+    except Exception:
+        mind = -1 if len(evaluator.params.maxDets) == 0 else len(evaluator.params.maxDets) - 1
+
+    iou_idx = 0
+
+    # Global precision: average across classes for each recall threshold
+    precision_global = []
+    K = precision_array.shape[2]
+    for r_idx in range(len(rec_thrs)):
+        vals = []
+        for k in range(K):
+            try:
+                v = precision_array[iou_idx, r_idx, k, aind, mind]
+                if v > -1:
+                    vals.append(v)
+            except Exception:
+                continue
+        precision_global.append(float(np.mean(vals)) if vals else 0.0)
+
+    # Per-class AP (at the single IoU threshold)
+    per_class_ap = {}
+    cat_ids = list(evaluator.params.catIds) if hasattr(evaluator.params, 'catIds') else []
+    for idx, cat_id in enumerate(cat_ids):
+        try:
+            pr = precision_array[iou_idx, :, idx, aind, mind]
+            valid = pr[pr > -1]
+            ap_val = float(np.mean(valid)) if valid.size > 0 else 0.0
+        except Exception:
+            ap_val = 0.0
+        per_class_ap[int(cat_id)] = ap_val
+
+    # COCOeval catIds come from GT categories; ensure classes seen only in preds get AP=0.0
+    for class_id in all_classes:
+        if int(class_id) not in per_class_ap:
+            per_class_ap[int(class_id)] = 0.0
+
+    return np.array(precision_global), np.array(rec_thrs), per_class_ap
 
 
 class DetectionMetrics:

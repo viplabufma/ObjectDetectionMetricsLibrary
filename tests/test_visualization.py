@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 import numpy as np
 
 # Mock input data
@@ -129,14 +129,11 @@ def test_plot_pr_curves_empty_input():
     # Verify error message
     assert "PR curves dictionary is empty" in str(excinfo.value)
 
-@patch('detmet.visualization.os.makedirs')
-@patch('detmet.visualization.open', new_callable=mock_open)
-def test_export_metrics_unsupported_format(mock_file, mock_makedirs):
+def test_export_metrics_unsupported_format(tmp_path):
     """
     Test that ValueError is raised for unsupported export formats
     - Should raise ValueError with specific message
-    - Should not attempt to write any file
-    - Should still create output directory
+    - Should not create output files
     """
     from detmet.visualization import export_metrics
     
@@ -147,27 +144,28 @@ def test_export_metrics_unsupported_format(mock_file, mock_makedirs):
         'f1_score': 0.81
     }
     
+    output_dir = tmp_path / 'out'
+    output_file = output_dir / 'metrics.yaml'
+
     # Test with unsupported format
     with pytest.raises(ValueError) as excinfo:
-        export_metrics(metrics, format='yaml')
+        export_metrics(metrics, output_path=str(output_dir), format='yaml')
     
     # Verify error message
     assert "Unsupported format. Use 'json'." in str(excinfo.value)
     
-    # Verify directory creation was attempted
-    mock_makedirs.assert_called_once_with('.', exist_ok=True)
-    
-    # Verify no file write was attempted
-    mock_file().write.assert_not_called()
+    # Verify no file was created
+    assert not output_file.exists()
+    assert not (output_dir / 'metrics.json').exists()
     
     # Test with another unsupported format
-    mock_makedirs.reset_mock()
     with pytest.raises(ValueError) as excinfo:
-        export_metrics(metrics, output_path='output', format='xml')
+        export_metrics(metrics, output_path=str(output_dir), format='xml')
     
     # Verify error message
     assert "Unsupported format. Use 'json'." in str(excinfo.value)
     
-    # Verify directory creation was attempted for custom path
-    mock_makedirs.assert_called_once_with('output', exist_ok=True)
+    # Still no files created
+    assert not (output_dir / 'metrics.xml').exists()
+    assert not (output_dir / 'metrics.json').exists()
 

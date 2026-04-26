@@ -216,15 +216,15 @@ def export_metrics(
     ...
     ValueError: Unsupported format. Use 'json'.
     """
+    if format != 'json':
+        raise ValueError("Unsupported format. Use 'json'.")
+
     # Convert NumPy objects to native types
     metrics_converted = convert_numpy(metrics)
-    
+
     # Create output directory if needed
     os.makedirs(output_path, exist_ok=True)
-    
+
     # Export to JSON
-    with open(os.path.join(output_path, f"metrics.{format}"), 'w') as f:
-        if format == 'json':
-            json.dump(metrics_converted, f, indent=4)
-        else:
-            raise ValueError("Unsupported format. Use 'json'.")
+    with open(os.path.join(output_path, "metrics.json"), 'w') as f:
+        json.dump(metrics_converted, f, indent=4)
