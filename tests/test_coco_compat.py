@@ -7,6 +7,7 @@ from tests.fixtures.coco_fixtures import (  # noqa: F401
     perfect_detection_fixture,
     single_class_basic_fixture,
 )
+from tests.utils.coco_oracle import compute_coco_api_reference_metrics
 
 
 @pytest.mark.coco_path
@@ -20,6 +21,7 @@ class TestComputeMapContract:
             prediction_json_path=pred_path,
         )
         result = manager.calculate_metrics()
+        exp_map, exp_map50, exp_map75, _ = compute_coco_api_reference_metrics(gt_path, pred_path)
 
         assert "global" in result.metrics
         assert "mAP" in result.metrics["global"]
@@ -30,9 +32,9 @@ class TestComputeMapContract:
         mAP50 = result.metrics["global"]["mAP50"]
         mAP75 = result.metrics["global"]["mAP75"]
 
-        assert 0.0 <= mAP <= 1.0
-        assert 0.0 <= mAP50 <= 1.0
-        assert 0.0 <= mAP75 <= 1.0
+        assert float(mAP) == pytest.approx(exp_map, rel=1e-6)
+        assert float(mAP50) == pytest.approx(exp_map50, rel=1e-6)
+        assert float(mAP75) == pytest.approx(exp_map75, rel=1e-6)
 
     def test_perfect_detection_fixture_map_is_one(self, perfect_detection_fixture):
         gt_path, pred_path = perfect_detection_fixture
@@ -53,9 +55,14 @@ class TestComputeMapContract:
             prediction_json_path=pred_path,
         )
         result = manager.calculate_metrics()
+        exp_map, exp_map50, exp_map75, exp_per_class = compute_coco_api_reference_metrics(
+            gt_path, pred_path
+        )
 
-        mAP = result.metrics["global"]["mAP"]
-        assert 0.0 <= mAP <= 1.0
+        assert float(result.metrics["global"]["mAP"]) == pytest.approx(exp_map, rel=1e-6)
+        assert float(result.metrics["global"]["mAP50"]) == pytest.approx(exp_map50, rel=1e-6)
+        assert float(result.metrics["global"]["mAP75"]) == pytest.approx(exp_map75, rel=1e-6)
+        assert float(result.metrics["object"]["ap"]) == pytest.approx(exp_per_class[1], rel=1e-6)
 
     def test_multiclass_mixed_fixture_map_is_one(self, multiclass_mixed_fixture):
         gt_path, pred_path = multiclass_mixed_fixture
@@ -84,13 +91,14 @@ class TestComputeMapContract:
             prediction_json_path=pred_path,
         )
         result = manager.calculate_metrics()
+        _, _, _, exp_per_class = compute_coco_api_reference_metrics(gt_path, pred_path)
 
         assert "cat" in result.metrics
         assert "dog" in result.metrics
         assert "ap" in result.metrics["cat"]
         assert "ap" in result.metrics["dog"]
-        assert 0.0 <= result.metrics["cat"]["ap"] <= 1.0
-        assert 0.0 <= result.metrics["dog"]["ap"] <= 1.0
+        assert float(result.metrics["cat"]["ap"]) == pytest.approx(exp_per_class[1], rel=1e-6)
+        assert float(result.metrics["dog"]["ap"]) == pytest.approx(exp_per_class[2], rel=1e-6)
 
 
 @pytest.mark.coco_path
@@ -142,7 +150,9 @@ class TestPRCurvesFromCOCOeval:
             prediction_json_path=pred_path,
         )
         result = manager.calculate_metrics()
+        exp_map, _, _, _ = compute_coco_api_reference_metrics(gt_path, pred_path)
 
-        pr_ap = result.metrics["pr_curves"]["global"]["ap"]
-        mAP = result.metrics["global"]["mAP"]
-        assert pr_ap == pytest.approx(mAP, rel=5e-2)
+        pr_ap = float(result.metrics["pr_curves"]["global"]["ap"])
+        mAP = float(result.metrics["global"]["mAP"])
+        assert pr_ap == pytest.approx(mAP, rel=1e-6)
+        assert pr_ap == pytest.approx(exp_map, rel=1e-6)

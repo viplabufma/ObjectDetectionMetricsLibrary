@@ -11,7 +11,8 @@ def save_confusion_matrix(
     matrix: List[List[float]], 
     class_names: List[str], 
     output_path: str = 'confusion_matrix.png',
-    background_class: bool = False
+    background_class: bool = False,
+    show: bool = False,
 ) -> None:
     """
     Save a confusion matrix visualization with custom class names.
@@ -22,12 +23,12 @@ def save_confusion_matrix(
         Confusion matrix as a 2D list of numerical values
     class_names : List[str]
         List of class names in the order corresponding to matrix indices
-    path : str, optional
-        Output file path for the confusion matrix image, 
-        by default 'confusion_matrix.png'
+    output_path : str, optional
+        Output file path for the confusion matrix image, by default 'confusion_matrix.png'
     background_class : bool, optional
-        Whether to include background class in the visualization, 
-        by default False
+        Whether to include background class in the visualization, by default False
+    show : bool, optional
+        Whether to display the plot interactively (calls `plt.show()`), by default False
         
     Notes
     -----
@@ -68,6 +69,12 @@ def save_confusion_matrix(
     plt.title('Confusion Matrix')
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches='tight')
+    if show:
+        try:
+            plt.show()
+        except Exception:
+            # In non-interactive backends show may be a no-op; ignore errors
+            pass
     plt.close()
 
 def plot_pr_curves(

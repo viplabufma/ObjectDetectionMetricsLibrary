@@ -1,213 +1,192 @@
-# Object Detection Metrics Library
+# detmet
 
-## Usage
+A lightweight Python library for computing object detection metrics (mAP, PR curves, confusion matrices) using COCO-format ground truth and predictions.
 
-The `DetectionMetricsManager` class provides a high-level interface for calculating object detection metrics. Here's a basic usage example:
+## Features
 
-To export metrics, confusion matrix and precision x recall curves.:
-```python
-from detmet import compute_metrics
-compute_metrics(
-    groundtruth_json_path="annotations.coco.json",
-    prediction_json_path="predictions.json"
-)
+- **High-level API**: `DetectionMetricsManager` for quick evaluation from JSON files.
+- **Low-level API**: `DetectionMetrics` for custom datasets and fine-grained control.
+- **Standard Metrics**: Precision, Recall, F1, Support, mAP, mAP50, mAP75, mIoU (global) and AP/IoU per class.
+- **Visualizations**: Precision-Recall curves and confusion matrices.
+- **Export**: Metrics to JSON.
+- **COCO Compatible**: Exact input format matching COCO annotations and predictions.
+- **Flexible**: Configurable IoU thresholds, confidence thresholds, class exclusions.
+
+## Installation
+
+```bash
+pip install detmet
 ```
 
-### Compute Metrics Separately
-To have a most granular control use the class DetectionMetricsManager. It works as an api to the DetectionMetrics class.
+## Quick Start
+
 ```python
 from detmet import DetectionMetricsManager
 
 mgr = DetectionMetricsManager(
+    groundtruth_json_path="path/to/coco_annotations.json",
+    prediction_json_path="path/to/predictions.json"
+)
+
+res = mgr.calculate_metrics(
+    iou_thr=0.5,
+    conf_thr=0.0,
+    exclude_classes=None
+)
+
+# Inspect metrics
+print(res.metrics["global"]["mAP50"])
+
+# Export to JSON (writes metrics.json)
+res.export(format="json", output_path=".")
+
+# Plot PR curves
+res.plot_pr_curves(output_path="pr_curves.png", show=False)
+
+# Plot confusion matrix
+res.plot_confusion_matrix(output_path="confusion_matrix.png", background_class=False)
+```
+
+### One-line helper
+
+```python
+from detmet import compute_metrics
+
+compute_metrics(
     groundtruth_json_path="annotations.coco.json",
     prediction_json_path="predictions.json",
+    iou_thr=0.5,
+    conf_thr=0.0
 )
-res = mgr.calculate_metrics(iou_thr=0.5, conf_thr=0.0)
-res.export(format="json", output_path=".")
-res.plot_pr_curves(output_path="pr.png", show=False)
-res.plot_confusion_matrix(output_path="conf.png", background_class=False)
 ```
 
-## Metrics Available
-* Precision, Recall, F1
-* Precision-Recall Curves
-* Confusion Matrix ((C+background)x(C+background))
-* AP per Class, mAP
+This writes `metrics.json`, `confusion_matrix.png`, and `pr_curves.png` to the current directory.
 
-## Documentation
+## Input Data Format
 
-### Input Data
-The input data must be a coco groundtruth json in the format:
-```
+### Ground Truth (COCO Annotations JSON)
+
+```json
 {
-  "info": {
-    "year": int,
-    "version": str,
-    "description": str,
-    "contributor": str,
-    "url": str, // String format
-  },
-  "licenses": [
-    {"id": int, "name": str, "url": str}
-  ],
-  "categories": [
-    {"id": int, "name": str, "supercategory": str}
-  ],
-  "images": [
-    {
-      "id": int,
-      "file_name": str,
-      "height": int,
-      "width": int,
-      "license": int,
-      "coco_url": str
-    }
-  ],
+  "categories": [{"id": 1, "name": "person", "supercategory": "person"}],
+  "images": [{"id": 0, "file_name": "image.jpg", "height": 480, "width": 640}],
   "annotations": [
     {
-      "id": int,
-      "image_id": int,
-      "category_id": int,
-      "bbox": [x, y, width, height],  // Top-left origin
-      "area": float,
-      "iscrowd": 0 or 1
+      "id": 1,
+      "image_id": 0,
+      "category_id": 1,
+      "bbox": [x, y, width, height],
+      "area": 1024,
+      "iscrowd": 0
     }
   ]
 }
 ```
-And an coco prediction json in the format:
-```
+
+### Predictions JSON
+
+```json
 [
   {
-    "image_id": int,
-    "category_id": int,
-    "bbox": [x, y, width, height],  // Top-left origin
-    "score": float 
+    "image_id": 0,
+    "category_id": 1,
+    "bbox": [x, y, width, height],
+    "score": 0.95
   }
 ]
 ```
-### Compute Metrics
-#### ```compute_metrics``` Function
 
-Exports metrics dictionary to JSON format, save confusion_matrix.png and pr_curves.png.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `groundtruth_json_path`    | str  | -       | Path to COCO-format ground truth JSON file    |
-| `prediction_json_path`| str  | -       | Path to COCO-format prediction results JSON file        |
-| `iou_thr`       | float   | 0.5     | IoU threshold for true positive matching (0.0-1.0)                                 |
-| `conf_thr`     | float   | 0.5  |  Confidence threshold for predictions (0.0-1.0)    |
-| `exclude_classes`     | list   | None  |  List of class IDs to exclude from evaluation    |
+Images must be referenced by `image_id`, categories by `category_id`. Bounding boxes use `[x_min, y_min, width, height]`.
 
-#### ```DetectionMetricsManager``` Class
+## High-Level Usage: `DetectionMetricsManager`
 
-Manages the calculation of object detection metrics by comparing ground truth and prediction results.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `groundtruth_json_path`    | str  | -       | Path to COCO-format ground truth JSON file    |
-| `prediction_json_path`| str  | -       | Path to COCO-format prediction results JSON file        |
+Load COCO JSON files and compute metrics in one call:
 
+```python
+from detmet import DetectionMetricsManager
 
-#### ```DetectionMetricsManager.calculate_metrics()``` Function
-
-Calculate detection metrics for the loaded dataset.
-Manages the calculation of object detection metrics by comparing ground truth and prediction results.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `iou_thr`    | float  | 0.5      | IoU threshold for true positive matching (0.0-1.0)    |
-| `conf_thr`| float  | 0.5       | Confidence threshold for predictions (0.0-1.0)        |
-| `exclude_classes`| list  | None       |List of class IDs to exclude from evaluation,        |
-
-Returns:
-```MetricsResult```: Object containing computed metrics and visualization methods
-
-#### ```MetricsResult.export()``` Function
-
-Export metrics to a file in the specified format.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `format`    | str  | 'json'      |  Output file format (currently only 'json' supported)    |
-| `output_path`| str  | '.'       | Output directory path        |
-
-#### ```MetricsResult.plot_pr_curves()``` Function
-
-Plot and save Precision-Recall curves.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `output_path`| str  | 'pr_curves.png'       |  Output file path for the PR curve image. If None, returns the figure without saving        |
-| `show`| bool  | False       |   Whether to display the plot interactively     |
-| `dpi`| int  | 100       |   Image resolution in dots per inch       |
-
-#### ```MetricsResult.plot_confusion_matrix()``` Function
-
-Plot and save a confusion matrix visualization.
-| Argument     | Type  | Default | Description                                      |
-|--------------|-------|---------|--------------------------------------------------|
-| `output_path`| str  | 'confusion_matrix.png'       |  Output file path for the confusion matrix image        |
-| `background_class`| bool  | False       |   Whether to include background class in the visualization     |
-
-## Metric Calculation Methodology
-### Alignment with COCO/PASCAL VOC Standards
-
-The library follows standard object detection evaluation practices:
-1. Per-Class Calculation:
-    * TP/FP/FN calculated independently per class
-    * Matches require IoU ≥ threshold (default=0.5)
-    * Follows COCO's greedy matching algorithm
-2. Crowd Handling:
-    * ```iscrowd=1```  annotations excluded from matching
-    * Detections matching crowd regions not penalized as FPs
-3. Confidence Thresholding:
-    * Predictions filtered by confidence score (default=0.5)
-
-### Multiclass Confusion Matrix vs Detection Matrix
-
-The library maintains two distinct confusion matrices:
-| Matrix Type       | Purpose                      | Dimensions       | Background Handling                      |
-|-------------------|------------------------------|------------------|------------------------------------------|
-| Detection Matrix   | Calculate TP/FP/FN per class | (C+1) × (C+1)     | Last row/column = background             |
-| Multiclass Matrix  | Capture class-to-class errors| (C+1) × (C+1)     | Last row/column = background             |
-
-Key Difference:
-* Detection matrix uses per-class matching (aligns with COCO standards)
-* Multiclass matrix uses global matching to capture misclassifications
-* This separation maintains standard TP/FP/FN calculation while providing insight into classification errors
-
-### Optimization Trick Explanation
+mgr = DetectionMetricsManager("gt.json", "pred.json")
+res = mgr.calculate_metrics(iou_thr=0.5, conf_thr=0.0)
 ```
-candidate_ious = iou_matrix[:, j].copy()  # IoU scores for the current detection (j)  
-candidate_ious[gt_matched] = -1.0         # Mask already matched ground truths  
-best_i = np.argmax(candidate_ious)        # Find the best remaining GT candidate  
-best_iou = candidate_ious[best_i]         # IoU of the best match  
+
+- `iou_thr`: IoU threshold for matching (default 0.5).
+- `conf_thr`: Minimum confidence to consider predictions (default 0.5).
+- `exclude_classes`: List of category IDs to ignore (dataset-specific).
+
+## Low-Level Usage: `DetectionMetrics`
+
+For in-memory data or custom processing:
+
+```python
+from detmet import DetectionMetrics
+
+dm = DetectionMetrics(names={1: "person", 2: "car"}, iou_thr=0.5, conf_thr=0.0)
+
+# For each image
+dm.process_image(gt_annotations, pred_annotations)
+
+metrics_dict = dm.compute_metrics()
+print(metrics_dict["global"]["precision"])
+print(metrics_dict[1]["recall"])  # class id 1
 ```
-This numpy optimization efficiently finds the best unmatched ground truth:
-1. Create copy of IoU scores for current prediction
-2. Mask already matched ground truths with -1.0
-3. Find maximum IoU among remaining candidates
-4. Ensures each ground truth is only matched once
-5. Vectorized operations provide significant speedup
+
+Note: COCO-style mAP and PR curves are computed when COCO objects are available (the manager provides them). For list-based usage you still get precision/recall/F1 and confusion matrices.
+
+## Inspecting Metrics
+
+The `MetricsResult` object exposes a metrics dictionary:
+
+```python
+print(res.metrics["global"]["mAP"])
+print(res.metrics["global"]["mAP50"])
+print(res.metrics["person"]["precision"])  # class name from COCO categories
+```
+
+`res.metrics` is a dict. Convert to a DataFrame if needed:
+
+```python
+import pandas as pd
+
+df = pd.DataFrame.from_dict(res.metrics, orient="index")
+```
+
+## Visualizations
+
+```python
+# Precision-Recall curves per class
+res.plot_pr_curves(output_path="pr.png", show=False)
+
+# Confusion matrix (counts with background)
+res.plot_confusion_matrix(output_path="conf.png", background_class=False)
+```
+
+## Tutorial Notebook
+
+Full examples and advanced usage:
+
+[examples/tutorial.ipynb](examples/tutorial.ipynb)
+
+## Methodology Notes
+
+- **Matching**: Predictions matched to GT using IoU >= threshold with greedy matching.
+- **mAP**: Computed by COCOeval (mAP@[.50:.95], mAP50, mAP75) when COCO objects are available.
+- **PR Curves**: Extracted from COCOeval data when enabled.
+- **Confusion Matrices**: Count-based matrices with a background row/column.
 
 ## Key Components
-### DetectionMetrics Class
 
-Core class for metric calculation with these key methods:
-| Method             | Description                                         |
-|--------------------|-----------------------------------------------------|
-| `process_image()`  | Processes detections for a single image             |
-| `calculate_metrics()` | Computes precision, recall, F1, and mAP         |
-| `_compute_map()`   | Calculates COCO-style mAP using `pycocotools`       |
+- **`DetectionMetricsManager`**: Loads JSON, parses, instantiates `DetectionMetrics`.
+- **`DetectionMetrics`**: Core class for metric computation from lists of dicts.
+- **`MetricsResult`**: Stores metrics dict, plots, and export methods.
 
-### DetectionMetricsManager Class
+## FAQ
 
-High-level interface with these main features:
-| Method              | Description                                         |
-|---------------------|-----------------------------------------------------|
-| `load_data()`       | Loads and processes COCO datasets                   |
-| `calculate_metrics()` | Computes all metrics across all images           |
-| `get_annotations()` | Retrieves annotations for specific image           |
+- **Why is `mAP` missing in low-level usage?** `DetectionMetrics` computes COCO mAP when COCO objects are provided (e.g., via `DetectionMetricsManager`). With list-based usage you still get precision/recall/F1 and confusion matrices.
+- **Which IDs go in `exclude_classes`?** Use the dataset `category_id` values. There is no implicit background class ID to exclude.
+- **Why do class keys appear as names in `res.metrics`?** The manager maps class IDs to category names for readability; use `res.metrics["global"]` for global metrics.
+- **What files does `compute_metrics` write?** It writes `metrics.json`, `confusion_matrix.png`, and `pr_curves.png` to the output directory.
 
+## References
 
-### References
-1. https://cocodataset.org/#detection-eval
-2. https://github.com/sunsmarterjie/yolov12/blob/main/ultralytics/utils/metrics.py
-3. https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/cocoeval.py
-4. https://github.com/open-mmlab/mmdetection/blob/main/mmdet/evaluation/metrics/voc_metric.py
+- https://cocodataset.org/#detection-eval
+- https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/cocoeval.py

@@ -7,6 +7,7 @@ from detmet import DetectionMetricsManager, compute_metrics
 import json
 from pathlib import Path
 import pytest
+from tests.utils.coco_oracle import compute_coco_api_reference_metrics
 
 @pytest.mark.integration
 def test_compute_metrics():
@@ -39,6 +40,9 @@ def test_precision_simple():
     manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics()
     metrics = result.metrics
+    exp_map, exp_map50, exp_map75, exp_per_class = compute_coco_api_reference_metrics(
+        gt_json_path, predictions_json_path
+    )
 
     assert metrics is not None
     assert 'global' in metrics
@@ -46,7 +50,11 @@ def test_precision_simple():
     assert 0.0 <= float(metrics['global']['precision']) <= 1.0
     assert 0.0 <= float(metrics['global']['recall']) <= 1.0
     assert 0.0 <= float(metrics['global']['f1']) <= 1.0
-    assert 0.0 <= float(metrics['global']['mAP']) <= 1.0
+    assert float(metrics['global']['mAP']) == pytest.approx(exp_map, rel=1e-6)
+    assert float(metrics['global']['mAP50']) == pytest.approx(exp_map50, rel=1e-6)
+    assert float(metrics['global']['mAP75']) == pytest.approx(exp_map75, rel=1e-6)
+    person_cat_id = next(iter(exp_per_class.keys()))
+    assert float(metrics['person']['ap']) == pytest.approx(exp_per_class[person_cat_id], rel=1e-6)
     assert metrics['global']['support'] > 0
 
 @pytest.mark.integration
@@ -65,11 +73,14 @@ def test_precision_medium():
     manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics()
     metrics = result.metrics
+    exp_map, exp_map50, exp_map75, _ = compute_coco_api_reference_metrics(
+        gt_json_path, predictions_json_path
+    )
     assert metrics is not None
     assert 'global' in metrics
-    assert 0.0 <= float(metrics['global']['mAP']) <= 1.0
-    assert 0.0 <= float(metrics['global']['mAP50']) <= 1.0
-    assert 0.0 <= float(metrics['global']['mAP75']) <= 1.0
+    assert float(metrics['global']['mAP']) == pytest.approx(exp_map, rel=1e-6)
+    assert float(metrics['global']['mAP50']) == pytest.approx(exp_map50, rel=1e-6)
+    assert float(metrics['global']['mAP75']) == pytest.approx(exp_map75, rel=1e-6)
     assert metrics['global']['support'] > 0
 
 @pytest.mark.integration
@@ -89,6 +100,9 @@ def test_export_json_smoke(tmp_path):
     manager = DetectionMetricsManager(groundtruth_json_path=gt_json_path, prediction_json_path=predictions_json_path)
     result = manager.calculate_metrics()
     result.export(format='json', output_path=str(tmp_path))
+    exp_map, exp_map50, exp_map75, _ = compute_coco_api_reference_metrics(
+        gt_json_path, predictions_json_path
+    )
 
     out_file = tmp_path / 'metrics.json'
     assert out_file.exists()
@@ -96,7 +110,9 @@ def test_export_json_smoke(tmp_path):
         data = json.load(f)
 
     assert 'global' in data
-    assert 0.0 <= float(data['global']['mAP']) <= 1.0
+    assert float(data['global']['mAP']) == pytest.approx(exp_map, rel=1e-6)
+    assert float(data['global']['mAP50']) == pytest.approx(exp_map50, rel=1e-6)
+    assert float(data['global']['mAP75']) == pytest.approx(exp_map75, rel=1e-6)
 
 
 def test_invalid_json(tmp_path):

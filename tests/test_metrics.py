@@ -3,6 +3,11 @@
     @Organization: Viplab - UFMA
     @GitHub: https://github.com/viplabufma/MatheusLevy_mestrado
 """
+import json
+import tempfile
+import contextlib
+import io
+
 import numpy as np
 import pytest
 from detmet import DetectionMetrics, bbox_iou
@@ -13,6 +18,143 @@ from detmet.metrics import (
     compute_precision_recall_curve,
 )
 from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+
+
+def _build_coco_batches(all_gts, all_preds):
+    """Build COCO GT/prediction payloads from list-of-images annotations."""
+    n_images = max(len(all_gts), len(all_preds))
+    all_gts_padded = list(all_gts) + [[] for _ in range(max(0, n_images - len(all_gts)))]
+    all_preds_padded = list(all_preds) + [[] for _ in range(max(0, n_images - len(all_preds)))]
+
+    cat_ids = sorted(
+        {
+            int(ann["category_id"])
+            for image_anns in (all_gts_padded + all_preds_padded)
+            for ann in image_anns
+        }
+    )
+
+    coco_gt = {
+        "info": {"description": "Runtime test fixture", "version": "1.0", "year": 2026},
+        "licenses": [],
+        "images": [
+            {"id": i + 1, "file_name": f"img_{i + 1}.jpg", "width": 640, "height": 640}
+            for i in range(n_images)
+        ],
+        "annotations": [],
+        "categories": [
+            {"id": cat_id, "name": f"class_{cat_id}", "supercategory": "thing"}
+            for cat_id in cat_ids
+        ],
+    }
+
+    prediction_rows = []
+    ann_id = 1
+
+    for idx, (img_gts, img_preds) in enumerate(zip(all_gts_padded, all_preds_padded), start=1):
+        for gt in img_gts:
+            x, y, w, h = gt["bbox"]
+            coco_gt["annotations"].append(
+                {
+                    "id": ann_id,
+                    "image_id": idx,
+                    "category_id": int(gt["category_id"]),
+                    "bbox": [float(x), float(y), float(w), float(h)],
+                    "area": float(w) * float(h),
+                    "iscrowd": int(gt.get("iscrowd", 0)),
+                }
+            )
+            ann_id += 1
+
+        for pred in img_preds:
+            x, y, w, h = pred["bbox"]
+            prediction_rows.append(
+                {
+                    "image_id": idx,
+                    "category_id": int(pred["category_id"]),
+                    "bbox": [float(x), float(y), float(w), float(h)],
+                    "score": float(pred.get("score", 1.0)),
+                }
+            )
+
+    return coco_gt, prediction_rows
+
+
+def _compute_oracle_from_batches(
+    all_gts,
+    all_preds,
+    iou_threshold=0.5,
+    class_agnostic=False,
+):
+    """Compute PR-AP oracle matching compute_precision_recall_curve semantics."""
+    coco_gt, pred_rows = _build_coco_batches(all_gts, all_preds)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        gt_path = f"{tmpdir}/gt.json"
+        pred_path = f"{tmpdir}/pred.json"
+        with open(gt_path, "w") as f:
+            json.dump(coco_gt, f)
+        with open(pred_path, "w") as f:
+            json.dump(pred_rows, f)
+
+        gt_coco = COCO(gt_path)
+        pred_coco = gt_coco.loadRes(pred_path)
+
+        evaluator = COCOeval(gt_coco, pred_coco, "bbox")
+        evaluator.params.iouThrs = np.array([iou_threshold], dtype=float)
+        if class_agnostic:
+            evaluator.params.useCats = 0
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            evaluator.evaluate()
+            evaluator.accumulate()
+
+        if not hasattr(evaluator, "eval") or "precision" not in evaluator.eval:
+            return 0.0, {}
+
+        precision = evaluator.eval["precision"]  # [T, R, K, A, M]
+        rec_thrs = evaluator.params.recThrs
+
+        try:
+            aind = next(i for i, label in enumerate(evaluator.params.areaRngLbl) if label == "all")
+        except StopIteration:
+            aind = 0
+        try:
+            mind = next(i for i, max_det in enumerate(evaluator.params.maxDets) if max_det == 100)
+        except StopIteration:
+            mind = len(evaluator.params.maxDets) - 1
+
+        iou_idx = 0
+        precision_global = []
+        for r_idx in range(len(rec_thrs)):
+            vals = []
+            for k in range(precision.shape[2]):
+                val = precision[iou_idx, r_idx, k, aind, mind]
+                if val > -1:
+                    vals.append(float(val))
+            precision_global.append(float(np.mean(vals)) if vals else 0.0)
+
+        ap_global = float(np.mean(precision_global)) if precision_global else 0.0
+
+        per_class_ap = {}
+        cat_ids = list(evaluator.params.catIds) if hasattr(evaluator.params, "catIds") else []
+        for idx, cat_id in enumerate(cat_ids):
+            pr = precision[iou_idx, :, idx, aind, mind]
+            valid_pr = pr[pr > -1]
+            ap = float(valid_pr.mean()) if valid_pr.size > 0 else 0.0
+            per_class_ap[int(cat_id)] = ap
+
+        # Ensure classes present only in predictions are represented with AP=0.0
+        classes_from_inputs = {
+            int(ann["category_id"])
+            for image_anns in (all_gts + all_preds)
+            for ann in image_anns
+        }
+        for class_id in classes_from_inputs:
+            per_class_ap.setdefault(class_id, 0.0)
+
+        return ap_global, per_class_ap
 
 def test_multi_image_processing():
     """
@@ -587,9 +729,20 @@ def test_map_calculation():
     ]
     metrics.process_image(gt_anns_4, pred_anns_4)
     result = metrics.compute_metrics()
-    
+
     # Verify presence of global metrics
     assert 'global' in result, "Global metrics should be present"
+
+    all_gts = [gt_anns_1, gt_anns_2, gt_anns_3, gt_anns_4]
+    all_preds = [pred_anns_1, pred_anns_2, pred_anns_3, pred_anns_4]
+    # Validate AP behavior via COCO-backed PR computation on the same batches.
+    pr_result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    exp_ap, exp_per_class = _compute_oracle_from_batches(all_gts, all_preds, iou_threshold=0.5)
+
+    assert float(pr_result['ap']) == pytest.approx(exp_ap, rel=1e-6)
+    for class_id, expected_ap in exp_per_class.items():
+        assert class_id in pr_result['per_class']
+        assert float(pr_result['per_class'][class_id]) == pytest.approx(expected_ap, rel=1e-6)
 
 def test_classification_errors_in_confusion_matrix():
     """Tests accounting of classification errors in multiclass matrix.
@@ -762,15 +915,16 @@ def test_precision_recall_curve_basic():
     
     # Compute PR curve
     result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
+    exp_ap, exp_per_class = _compute_oracle_from_batches(all_gts, all_preds, iou_threshold=0.5)
     
     # Validate results
     assert len(result['precision']) >= 1
     assert len(result['recall']) >= 1
     assert len(result['thresholds']) >= 1
 
-    # AP and per-class AP should be reasonable (non-negative)
-    assert result['ap'] >= 0.0
-    assert result['per_class'][1] >= 0.0
+    # AP and per-class AP must match COCO API oracle.
+    assert float(result['ap']) == pytest.approx(exp_ap, rel=1e-6)
+    assert float(result['per_class'][1]) == pytest.approx(exp_per_class[1], rel=1e-6)
 
 @pytest.mark.coco_path
 def test_precision_recall_curve_multiclass():
@@ -800,12 +954,12 @@ def test_precision_recall_curve_multiclass():
     
     # Compute PR curve
     result = compute_precision_recall_curve(all_gts, all_preds, iou_threshold=0.5)
-    
-    # Validate per-class results (non-negative)
-    assert result['per_class'][1] >= 0.0
-    assert result['per_class'][2] >= 0.0
-    # Global AP non-negative
-    assert result['ap'] >= 0.0
+    exp_ap, exp_per_class = _compute_oracle_from_batches(all_gts, all_preds, iou_threshold=0.5)
+
+    # Validate per-class/global AP numerically against oracle.
+    assert float(result['per_class'][1]) == pytest.approx(exp_per_class[1], rel=1e-6)
+    assert float(result['per_class'][2]) == pytest.approx(exp_per_class[2], rel=1e-6)
+    assert float(result['ap']) == pytest.approx(exp_ap, rel=1e-6)
 
 @pytest.mark.coco_path
 def test_precision_recall_curve_crowd_annotations():
@@ -831,11 +985,13 @@ def test_precision_recall_curve_crowd_annotations():
     ]
     
     result = compute_precision_recall_curve(all_gts, all_preds)
+    exp_ap, exp_per_class = _compute_oracle_from_batches(all_gts, all_preds, iou_threshold=0.5)
     
     # With COCOeval, prediction on crowd region is ignored (not FP), so precision remains ~1.0
     assert result['precision'][-1] == pytest.approx(1.0, abs=0.05)
     assert result['recall'][-1] == pytest.approx(1.0, abs=0.01)
-    assert result['ap'] >= 0.0
+    assert float(result['ap']) == pytest.approx(exp_ap, rel=1e-6)
+    assert float(result['per_class'][1]) == pytest.approx(exp_per_class[1], rel=1e-6)
 
 @pytest.mark.coco_path
 def test_precision_recall_curve_empty_inputs():

@@ -43,7 +43,8 @@ class MetricsResult:
         self.labels = labels
 
     def plot_confusion_matrix(self, output_path: str = 'confusion_matrix.png', 
-                             background_class: bool = False) -> None:
+                             background_class: bool = False,
+                             show: bool = False) -> None:
         """
         Plot and save a confusion matrix visualization.
         
@@ -63,7 +64,8 @@ class MetricsResult:
             self.metrics['confusion_matrix_multiclass'], 
             self.labels, 
             output_path, 
-            background_class
+            background_class,
+            show
         )
 
     def plot_pr_curves(self, output_path: Optional[str] = 'pr_curves.png', 

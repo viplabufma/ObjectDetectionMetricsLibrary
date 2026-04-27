@@ -28,6 +28,7 @@ dependencies = [
     "seaborn>=0.13.0",
     "pycocotools>=2.0.10",
     "pytest>=9.0.3",
+    "ipykernel>=7.2.0",
 ]
 
 [project.optional-dependencies]
