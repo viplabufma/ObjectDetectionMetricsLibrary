@@ -16,6 +16,7 @@ from detmet.metrics import (
     compute_iou_matrix_xywh,
     compute_iou_matrix_xyxy,
     compute_precision_recall_curve,
+    compute_ultralytics_metrics,
 )
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -1044,6 +1045,179 @@ def test_pr_curves_early_return():
     
     metrics._compute_pr_curves(dummy_metrics)    
     assert not metrics.pr_curves
+
+
+def test_ultralytics_metrics_perfect_single_class_smoke():
+    """Smoke test for the simplest possible successful batch."""
+    all_gts = [[
+        {'category_id': 1, 'bbox': [10, 10, 20, 20]},
+        {'category_id': 1, 'bbox': [50, 50, 20, 20]},
+    ]]
+    all_preds = [[
+        {'category_id': 1, 'bbox': [10, 10, 20, 20], 'score': 0.9},
+        {'category_id': 1, 'bbox': [50, 50, 20, 20], 'score': 0.8},
+    ]]
+
+    result = compute_ultralytics_metrics(all_gts, all_preds)
+
+    assert result['global']['precision'] == pytest.approx(1.0)
+    assert result['global']['recall'] == pytest.approx(1.0)
+    assert result['global']['f1'] == pytest.approx(1.0)
+    assert result['global']['support'] == 2
+    assert result['per_class'][1]['AP50'] > 0.99
+
+
+def _ultralytics_duplicate_confidence_fixture():
+    """Build a non-trivial confidence sweep with duplicates, late TPs, and FPs."""
+    all_gts = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40]},
+        {'category_id': 1, 'bbox': [80, 10, 40, 40]},
+        {'category_id': 1, 'bbox': [150, 10, 40, 40]},
+        {'category_id': 1, 'bbox': [10, 90, 40, 40]},
+        {'category_id': 1, 'bbox': [80, 90, 40, 40]},
+    ]]
+    all_preds = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40], 'score': 0.95},
+        {'category_id': 1, 'bbox': [12, 12, 40, 40], 'score': 0.90},  # duplicate FP
+        {'category_id': 1, 'bbox': [80, 10, 40, 40], 'score': 0.85},
+        {'category_id': 1, 'bbox': [150, 10, 40, 40], 'score': 0.80},
+        {'category_id': 1, 'bbox': [300, 10, 30, 30], 'score': 0.75},
+        {'category_id': 1, 'bbox': [350, 10, 30, 30], 'score': 0.70},
+        {'category_id': 1, 'bbox': [400, 10, 30, 30], 'score': 0.65},
+        {'category_id': 1, 'bbox': [450, 10, 30, 30], 'score': 0.60},
+        {'category_id': 1, 'bbox': [500, 10, 30, 30], 'score': 0.55},
+        {'category_id': 1, 'bbox': [550, 10, 30, 30], 'score': 0.50},
+        {'category_id': 1, 'bbox': [10, 90, 40, 40], 'score': 0.45},
+        {'category_id': 1, 'bbox': [80, 90, 40, 40], 'score': 0.40},
+    ]]
+    return all_gts, all_preds
+
+
+def test_ultralytics_metrics_duplicate_predictions_lower_precision():
+    """Duplicate and late detections should produce realistic confidence-swept metrics."""
+    all_gts, all_preds = _ultralytics_duplicate_confidence_fixture()
+
+    result = compute_ultralytics_metrics(all_gts, all_preds)
+    cls = result['per_class'][1]
+    expected_precision = 41 / 60
+    expected_recall = 3 / 5
+    expected_f1 = 2 * expected_precision * expected_recall / (expected_precision + expected_recall)
+
+    assert cls['precision'] == pytest.approx(expected_precision)
+    assert cls['recall'] == pytest.approx(expected_recall)
+    assert cls['f1'] == pytest.approx(expected_f1)
+    assert cls['best_conf'] == pytest.approx(7 / 9)
+    assert cls['tp'] == 3
+    assert cls['support'] == 5
+    assert cls['AP50'] == pytest.approx(0.6616666666666665)
+    assert result['global']['mAP50-95'] == pytest.approx(0.6616666666666664)
+
+
+def test_ultralytics_metrics_class_mismatch_realistic_multiclass():
+    """Class errors should affect each class independently at the shared best confidence."""
+    all_gts = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40]},
+        {'category_id': 1, 'bbox': [80, 10, 40, 40]},
+        {'category_id': 1, 'bbox': [150, 10, 40, 40]},
+        {'category_id': 2, 'bbox': [10, 90, 40, 40]},
+        {'category_id': 2, 'bbox': [80, 90, 40, 40]},
+    ]]
+    all_preds = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40], 'score': 0.95},
+        {'category_id': 2, 'bbox': [80, 10, 40, 40], 'score': 0.91},  # class mismatch
+        {'category_id': 1, 'bbox': [150, 10, 40, 40], 'score': 0.86},
+        {'category_id': 2, 'bbox': [10, 90, 40, 40], 'score': 0.81},
+        {'category_id': 1, 'bbox': [250, 10, 30, 30], 'score': 0.74},
+        {'category_id': 2, 'bbox': [300, 10, 30, 30], 'score': 0.70},
+        {'category_id': 1, 'bbox': [80, 90, 40, 40], 'score': 0.65},  # class mismatch
+    ]]
+
+    result = compute_ultralytics_metrics(all_gts, all_preds)
+
+    assert result['ap_class_index'].tolist() == [1, 2]
+    assert result['global']['precision'] == pytest.approx(0.645769506880618)
+    assert result['global']['recall'] == pytest.approx(7 / 12)
+    assert result['global']['f1'] == pytest.approx(0.6106322080609258)
+    assert result['global']['best_conf'] == pytest.approx(0.7937937937937938)
+    assert result['global']['mAP50'] == pytest.approx(0.5408250000000001)
+
+    assert result['per_class'][1]['precision'] == pytest.approx(0.8160938716494271)
+    assert result['per_class'][1]['recall'] == pytest.approx(2 / 3)
+    assert result['per_class'][1]['f1'] == pytest.approx(0.7338509044993685)
+    assert result['per_class'][1]['AP50'] == pytest.approx(0.7491500000000002)
+    assert result['per_class'][2]['precision'] == pytest.approx(0.4754451421118087)
+    assert result['per_class'][2]['f1'] == pytest.approx(0.48741351162248303)
+    assert result['per_class'][2]['AP50'] == pytest.approx(0.3324999999999999)
+
+
+def test_ultralytics_metrics_confidence_sweep_best_conf():
+    """Ultralytics-style metrics choose a confidence operating point from the F1 curve."""
+    all_gts, all_preds = _ultralytics_duplicate_confidence_fixture()
+
+    result = compute_ultralytics_metrics(all_gts, all_preds)
+
+    best_idx = int(np.argmin(np.abs(result['curves']['x'] - result['global']['best_conf'])))
+    assert result['global']['best_conf'] == pytest.approx(7 / 9)
+    assert result['curves']['precision'][0, best_idx] == pytest.approx(41 / 60)
+    assert result['curves']['recall'][0, best_idx] == pytest.approx(3 / 5)
+    assert result['curves']['f1'][0, best_idx] == pytest.approx(0.638961038961039)
+
+
+def test_ultralytics_metrics_empty_inputs_smoke():
+    """Empty batches should return a complete zero-valued result."""
+    result = compute_ultralytics_metrics([], [[]], class_names={1: 'object'})
+
+    assert result['global']['precision'] == 0.0
+    assert result['global']['recall'] == 0.0
+    assert result['global']['f1'] == 0.0
+    assert result['global']['support'] == 0
+    assert result['per_class'] == {}
+    assert result['curves']['precision'].shape == (0, 1000)
+
+
+def test_ultralytics_metrics_crowd_predictions_are_ignored():
+    """Same-class crowd detections should be removed before confidence-swept scoring."""
+    all_gts = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40], 'iscrowd': 0},
+        {'category_id': 1, 'bbox': [80, 10, 40, 40], 'iscrowd': 0},
+        {'category_id': 1, 'bbox': [150, 10, 40, 40], 'iscrowd': 0},
+        {'category_id': 1, 'bbox': [220, 10, 40, 40], 'iscrowd': 1},
+    ]]
+    all_preds = [[
+        {'category_id': 1, 'bbox': [10, 10, 40, 40], 'score': 0.90},
+        {'category_id': 1, 'bbox': [220, 10, 40, 40], 'score': 0.85},  # ignored crowd match
+        {'category_id': 1, 'bbox': [300, 10, 30, 30], 'score': 0.80},
+        {'category_id': 1, 'bbox': [80, 10, 40, 40], 'score': 0.70},
+        {'category_id': 1, 'bbox': [350, 10, 30, 30], 'score': 0.60},
+        {'category_id': 1, 'bbox': [150, 10, 40, 40], 'score': 0.40},
+    ]]
+
+    result = compute_ultralytics_metrics(all_gts, all_preds)
+    cls = result['per_class'][1]
+
+    assert cls['support'] == 3
+    assert cls['precision'] == pytest.approx(3 / 5)
+    assert cls['f1'] == pytest.approx(3 / 4)
+    assert cls['fp'] == 2
+    assert cls['AP50'] == pytest.approx(0.753)
+
+
+def test_detection_metrics_reset_clears_ultralytics_pr_data():
+    """reset() should clear stored list batches used for Ultralytics-style metrics."""
+    metrics = DetectionMetrics(names={1: 'object'}, store_pr_data=True)
+    metrics.process_image(
+        [{'category_id': 1, 'bbox': [10, 10, 20, 20]}],
+        [{'category_id': 1, 'bbox': [10, 10, 20, 20], 'score': 0.9}]
+    )
+    assert metrics.compute_metrics()['ultralytics']['global']['support'] == 1
+
+    metrics.reset()
+    metrics.process_image([], [])
+    result = metrics.compute_metrics()
+
+    assert metrics.pr_gts == [[]]
+    assert result['ultralytics']['global']['support'] == 0
+
 
 @pytest.mark.coco_path
 def test_precision_recall_curve_class_without_ground_truth():

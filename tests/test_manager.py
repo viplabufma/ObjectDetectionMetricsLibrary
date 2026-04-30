@@ -56,6 +56,18 @@ def test_precision_simple():
     person_cat_id = next(iter(exp_per_class.keys()))
     assert float(metrics['person']['ap']) == pytest.approx(exp_per_class[person_cat_id], rel=1e-6)
     assert metrics['global']['support'] > 0
+    assert metrics['global']['precision'] == pytest.approx(2 / 3)
+    assert metrics['global']['recall'] == pytest.approx(2 / 3)
+    assert 'ultralytics' in metrics
+    assert 'global' in metrics['ultralytics']
+    assert 'per_class' in metrics['ultralytics']
+    assert 'person' in metrics['ultralytics']['per_class']
+    assert float(metrics['ultralytics']['global']['precision']) == pytest.approx(0.9392726059392726)
+    assert float(metrics['ultralytics']['global']['recall']) == pytest.approx(2 / 3)
+    assert float(metrics['ultralytics']['global']['f1']) == pytest.approx(0.7798323983655377)
+    assert float(metrics['ultralytics']['global']['best_conf']) == pytest.approx(0.7817817817817818)
+    assert float(metrics['ultralytics']['global']['mAP50']) == pytest.approx(0.7772000000000001)
+    assert float(metrics['ultralytics']['per_class']['person']['AP50-95']) == pytest.approx(0.7772000000000002)
 
 @pytest.mark.integration
 def test_precision_medium():

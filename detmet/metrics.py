@@ -334,6 +334,237 @@ def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple:
     return p, r, f1(p, r)
 
 
+def _smooth_curve(y: np.ndarray, fraction: float = 0.05) -> np.ndarray:
+    """Smooth a curve with the same box filter used by Ultralytics."""
+    if y.size == 0:
+        return y
+    nf = round(len(y) * fraction * 2) // 2 + 1
+    padding = np.ones(nf // 2)
+    padded = np.concatenate((padding * y[0], y, padding * y[-1]), axis=0)
+    return np.convolve(padded, np.ones(nf) / nf, mode='valid')
+
+
+def _compute_ap_ultralytics(recall_curve: np.ndarray, precision_curve: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
+    """Compute AP from recall and precision curves using Ultralytics' interpolation method."""
+    mrec = np.concatenate(([0.0], recall_curve, [1.0]))
+    mpre = np.concatenate(([1.0], precision_curve, [0.0]))
+    mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
+    x = np.linspace(0, 1, 101)
+    ap = np.trapezoid(np.interp(x, mrec, mpre), x)
+    return float(ap), mpre, mrec
+
+
+def _match_predictions_ultralytics(
+    gt_anns: List[dict],
+    pred_anns: List[dict],
+    iouv: np.ndarray
+) -> np.ndarray:
+    """Return a prediction-correctness matrix following Ultralytics matching semantics."""
+    correct = np.zeros((len(pred_anns), len(iouv)), dtype=bool)
+    if not gt_anns or not pred_anns:
+        return correct
+
+    iou = compute_iou_matrix_xywh(gt_anns, pred_anns)
+    gt_cls = np.array([g.get('category_id', 0) for g in gt_anns])
+    pred_cls = np.array([p.get('category_id', 0) for p in pred_anns])
+    iou = iou * (gt_cls[:, None] == pred_cls[None, :])
+
+    for i, threshold in enumerate(iouv):
+        matches = np.argwhere(iou >= threshold)
+        if matches.size == 0:
+            continue
+        if matches.shape[0] > 1:
+            match_ious = iou[matches[:, 0], matches[:, 1]]
+            matches = matches[match_ious.argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+        correct[matches[:, 1].astype(int), i] = True
+
+    return correct
+
+
+def _crowd_ignore_mask(pred_anns: List[dict], crowd_anns: List[dict], iou_thr: float) -> np.ndarray:
+    """Mark predictions that should be ignored because they match same-class crowd regions."""
+    ignored = np.zeros(len(pred_anns), dtype=bool)
+    if not pred_anns or not crowd_anns:
+        return ignored
+
+    crowd_by_class = defaultdict(list)
+    for crowd in crowd_anns:
+        crowd_by_class[crowd.get('category_id', 0)].append(crowd)
+
+    for idx, pred in enumerate(pred_anns):
+        for crowd in crowd_by_class.get(pred.get('category_id', 0), []):
+            if bbox_iou(crowd['bbox'], pred['bbox']) >= iou_thr:
+                ignored[idx] = True
+                break
+    return ignored
+
+
+def compute_ultralytics_metrics(
+    all_gts: List[List[dict]],
+    all_preds: List[List[dict]],
+    class_names: dict = None,
+    exclude_classes: list = None,
+    iouv: np.ndarray = None,
+    eps: float = 1e-16
+) -> Dict[str, Any]:
+    """
+    Compute Ultralytics-style object detection precision, recall, F1, and AP metrics.
+
+    Parameters
+    ----------
+    all_gts : List[List[dict]]
+        List of ground truth annotations per image in COCO xywh format.
+    all_preds : List[List[dict]]
+        List of prediction annotations per image in COCO xywh format with optional scores.
+    class_names : dict, optional
+        Class ID to class name mapping. Used to include configured classes with no data.
+    exclude_classes : list, optional
+        Class IDs to exclude from evaluation.
+    iouv : np.ndarray, optional
+        IoU thresholds. Defaults to np.linspace(0.5, 0.95, 10).
+    eps : float, optional
+        Small value used to avoid division by zero.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Ultralytics-style metrics with global values, per-class values, confidence curves,
+        AP class index, and IoU thresholds.
+    """
+    exclude_set = set(exclude_classes or [])
+    iouv = np.asarray(iouv if iouv is not None else np.linspace(0.5, 0.95, 10), dtype=float)
+    x = np.linspace(0, 1, 1000)
+    n_images = max(len(all_gts or []), len(all_preds or []))
+
+    tp_parts = []
+    conf_parts = []
+    pred_cls_parts = []
+    target_cls_parts = []
+
+    for image_idx in range(n_images):
+        gts = all_gts[image_idx] if image_idx < len(all_gts or []) else []
+        preds = all_preds[image_idx] if image_idx < len(all_preds or []) else []
+
+        gts = [g for g in gts if g.get('category_id', 0) not in exclude_set]
+        preds = [p for p in preds if p.get('category_id', 0) not in exclude_set]
+
+        gt_non_crowd = [g for g in gts if int(g.get('iscrowd', 0)) == 0]
+        gt_crowd = [g for g in gts if int(g.get('iscrowd', 0)) == 1]
+        target_cls_parts.extend([int(g.get('category_id', 0)) for g in gt_non_crowd])
+
+        if not preds:
+            continue
+
+        correct = _match_predictions_ultralytics(gt_non_crowd, preds, iouv)
+        crowd_ignored = _crowd_ignore_mask(preds, gt_crowd, float(iouv[0])) & ~correct[:, 0]
+        keep = ~crowd_ignored
+        if not np.any(keep):
+            continue
+
+        tp_parts.append(correct[keep])
+        conf_parts.append(np.array([float(p.get('score', 0.0)) for p, k in zip(preds, keep) if k], dtype=float))
+        pred_cls_parts.append(np.array([int(p.get('category_id', 0)) for p, k in zip(preds, keep) if k], dtype=int))
+
+    target_cls = np.array(target_cls_parts, dtype=int)
+    if tp_parts:
+        tp = np.concatenate(tp_parts, axis=0)
+        conf = np.concatenate(conf_parts)
+        pred_cls = np.concatenate(pred_cls_parts)
+        order = np.argsort(-conf)
+        tp, conf, pred_cls = tp[order], conf[order], pred_cls[order]
+    else:
+        tp = np.zeros((0, len(iouv)), dtype=bool)
+        conf = np.array([], dtype=float)
+        pred_cls = np.array([], dtype=int)
+
+    classes_from_data = set(target_cls.tolist()) | set(pred_cls.tolist())
+    class_ids = np.array(sorted(classes_from_data - exclude_set), dtype=int)
+    nc = len(class_ids)
+
+    p_curve = np.zeros((nc, 1000), dtype=float)
+    r_curve = np.zeros((nc, 1000), dtype=float)
+    f1_curve = np.zeros((nc, 1000), dtype=float)
+    ap = np.zeros((nc, len(iouv)), dtype=float)
+    precision_at_best = np.zeros(nc, dtype=float)
+    recall_at_best = np.zeros(nc, dtype=float)
+    f1_at_best = np.zeros(nc, dtype=float)
+    tp_at_best = np.zeros(nc, dtype=float)
+    fp_at_best = np.zeros(nc, dtype=float)
+    support = np.array([(target_cls == cid).sum() for cid in class_ids], dtype=int)
+    best_conf = 0.0
+
+    for ci, cid in enumerate(class_ids):
+        class_pred_mask = pred_cls == cid
+        n_labels = support[ci]
+        n_preds = int(class_pred_mask.sum())
+        if n_preds == 0 or n_labels == 0:
+            continue
+
+        class_tp = tp[class_pred_mask]
+        class_conf = conf[class_pred_mask]
+        fpc = (1 - class_tp.astype(float)).cumsum(axis=0)
+        tpc = class_tp.astype(float).cumsum(axis=0)
+
+        recall_curve = tpc / (n_labels + eps)
+        precision_curve = tpc / (tpc + fpc + eps)
+
+        r_curve[ci] = np.interp(-x, -class_conf, recall_curve[:, 0], left=0)
+        p_curve[ci] = np.interp(-x, -class_conf, precision_curve[:, 0], left=1)
+
+        for j in range(len(iouv)):
+            ap[ci, j], _, _ = _compute_ap_ultralytics(recall_curve[:, j], precision_curve[:, j])
+
+    if nc > 0:
+        f1_curve = 2 * p_curve * r_curve / (p_curve + r_curve + eps)
+        best_idx = int(_smooth_curve(f1_curve.mean(axis=0), 0.1).argmax())
+        best_conf = float(x[best_idx])
+        precision_at_best = p_curve[:, best_idx]
+        recall_at_best = r_curve[:, best_idx]
+        f1_at_best = f1_curve[:, best_idx]
+        tp_at_best = np.round(recall_at_best * support)
+        fp_at_best = np.round(tp_at_best / (precision_at_best + eps) - tp_at_best)
+        fp_at_best = np.maximum(fp_at_best, 0)
+
+    per_class = {}
+    for ci, cid in enumerate(class_ids):
+        per_class[int(cid)] = {
+            'precision': float(precision_at_best[ci]),
+            'recall': float(recall_at_best[ci]),
+            'f1': float(f1_at_best[ci]),
+            'best_conf': best_conf,
+            'tp': int(tp_at_best[ci]),
+            'fp': int(fp_at_best[ci]),
+            'support': int(support[ci]),
+            'AP50': float(ap[ci, 0]) if len(iouv) else 0.0,
+            'AP50-95': float(ap[ci].mean()) if len(iouv) else 0.0
+        }
+
+    return {
+        'global': {
+            'precision': float(precision_at_best.mean()) if nc else 0.0,
+            'recall': float(recall_at_best.mean()) if nc else 0.0,
+            'f1': float(f1_at_best.mean()) if nc else 0.0,
+            'best_conf': best_conf,
+            'tp': int(tp_at_best.sum()) if nc else 0,
+            'fp': int(fp_at_best.sum()) if nc else 0,
+            'support': int(support.sum()) if nc else 0,
+            'mAP50': float(ap[:, 0].mean()) if nc and len(iouv) else 0.0,
+            'mAP50-95': float(ap.mean()) if nc and len(iouv) else 0.0
+        },
+        'per_class': per_class,
+        'curves': {
+            'x': x,
+            'precision': p_curve,
+            'recall': r_curve,
+            'f1': f1_curve
+        },
+        'ap_class_index': class_ids,
+        'iouv': iouv
+    }
+
+
 def compute_precision_recall_curve(
     all_gts: List[List[dict]],
     all_preds: List[List[dict]],
@@ -657,6 +888,8 @@ class DetectionMetrics:
         self.per_class_tp_count = defaultdict(int)
         self.per_class_union = defaultdict(float)
         self.per_class_intersection = defaultdict(float)
+        self.pr_gts = []
+        self.pr_preds = []
 
     def _update_iou_metrics(self, cid: int, iou: float, inter: float, gt_area: float, pred_area: float) -> None:
         """
@@ -1316,6 +1549,14 @@ class DetectionMetrics:
             self._compute_pr_curves(metrics)
             # Include PR curves data in metrics
             metrics['pr_curves'] = self.pr_curves
+
+        if self.store_pr_data and (self.pr_gts or self.pr_preds):
+            metrics['ultralytics'] = compute_ultralytics_metrics(
+                self.pr_gts,
+                self.pr_preds,
+                class_names=self.names,
+                exclude_classes=self.exclude_classes
+            )
 
         return metrics
 
